@@ -287,7 +287,7 @@
   }
 
   function viewHome(){
-    if (!jobs.length) return [waCard(), emptyFirst()];
+    if (!jobs.length) return [installCard(), waCard(), emptyFirst()];
     const now = new Date(), ym = todayStr().slice(0,7), y = String(now.getFullYear());
     const prev = new Date(now.getFullYear(), now.getMonth()-1, 1), prevYm = iso(prev).slice(0,7);
     const mIn = income(ym), yIn = income(y), pIn = income(prevYm);
@@ -307,6 +307,7 @@
     const maxMain = Math.max(1, ...months.map(([,m]) => m.base));
 
     return [
+      installCard(),
       remindStrip(),
       transitStrip(),
       waCard(),
@@ -430,9 +431,26 @@
 
   // ---------- settings ----------
   let installEvt = null;
-  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (view === "settings") render(); });
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; render(); });
+  window.addEventListener("appinstalled", () => { installEvt = null; toast("تم تثبيت التطبيق ✓"); render(); });
   const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const inAppBrowser = /FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat|TikTok|; wv\)|Claude/i.test(navigator.userAgent);
+  const isIOSSafari = isIOS && /Safari/i.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/i.test(navigator.userAgent);
+  function installCard(){
+    if (isStandalone() || LS.get("ledger.hideInstall", false)) return null;
+    const close = h("button",{class:"btn ghost sm",type:"button","aria-label":"إخفاء",onclick:()=>{ LS.set("ledger.hideInstall", true); render(); }}, icon("i-x"));
+    let text, btn = null;
+    if (installEvt){ text = "ثبّت التطبيق على جهازك علشان يفتح بأيقونته ويشتغل من غير نت."; btn = h("button",{class:"btn primary",type:"button",onclick:async()=>{ installEvt.prompt(); try{ await installEvt.userChoice; }catch(e){} installEvt=null; render(); }}, "ثبّت التطبيق"); }
+    else if (inAppBrowser) text = "علشان تثبّت التطبيق، افتح اللينك ده من متصفح Chrome (أو Safari على الآيفون)، مش من جوه واتساب أو أي تطبيق تاني.";
+    else if (isIOS && !isIOSSafari) text = "على الآيفون التثبيت بيتعمل من Safari بس: افتح اللينك في Safari، واضغط زرار المشاركة، واختار «إضافة إلى الشاشة الرئيسية».";
+    else if (isIOS) text = "علشان تثبّت التطبيق: اضغط زرار المشاركة تحت، واختار «إضافة إلى الشاشة الرئيسية».";
+    else text = "علشان تثبّت التطبيق: من قايمة المتصفح ⋮ اختار «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».";
+    return h("div",{class:"wa-card",style:"background:var(--grad-soft),var(--card)"},
+      h("span",{class:"ic",style:"background:var(--grad);color:#fff"}, icon("i-reg")),
+      h("div",{class:"tx"}, h("b",null,"نزّل «دفتر المصمم» كتطبيق"), h("span",null,text)),
+      btn, close);
+  }
 
   function viewSettings(){
     const curSel = (id, val, onch) => h("select",{id,class:"search",style:"flex:none;width:auto",onchange:onch}, ...Object.keys(CUR).map(k=>h("option",{value:k,selected:val===k?true:null}, CUR_NAME[k]+" ("+CUR[k]+")")));
