@@ -10,8 +10,8 @@
 <meta name="description" content="إدارة العملاء والمشاريع والحسابات ومواعيد التسليم للمصممين المستقلين.">
 <title>دفتر المصمم</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=2">
 <link rel="preload" href="fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
 /* before first paint: decide splash + lock so nothing private flashes on screen */
@@ -466,7 +466,7 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 :root[data-splash] #splash{display:flex}
 #splash{position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px max(24px,env(safe-area-inset-left,0px));text-align:center;color:#fff;cursor:pointer;
   background:radial-gradient(120% 60% at 100% 0%,rgba(59,130,246,.35),transparent 60%),radial-gradient(90% 50% at 0% 100%,rgba(124,58,237,.45),transparent 65%),linear-gradient(180deg,#0B1424,#101B35)}
-#splash svg{width:84px;height:74px;color:#F3F6FA;margin-bottom:26px}
+#splash svg{width:58px;height:54px;color:#F3F6FA;margin-bottom:48px;margin-top:-40px}
 #splash .bism{font-family:var(--f-display);font-size:1.15rem;opacity:.85}
 #splash .dua{font-size:1.45rem;line-height:1.9;max-width:520px;font-weight:600}
 #splash .src{font-size:.82rem;opacity:.65}
@@ -580,7 +580,7 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
   <symbol id="i-wa" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-7.4 12.7L3.5 20.5l4.4-1.1A8.5 8.5 0 1 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8.6c.2-.4.5-.4.7-.4h.4c.2 0 .4 0 .5.4l.6 1.4c.1.2 0 .4-.1.5l-.4.5c-.1.1-.1.3 0 .4.6 1 1.4 1.7 2.4 2.2.2.1.3.1.4 0l.6-.6c.1-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.4 0 .4-.1 1-.6 1.3-.5.4-1.3.5-2.3.2-1.6-.5-3.6-2.2-4.4-3.9-.5-1.1-.4-2.1 0-2.6z" fill="currentColor"/></symbol>
   <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.1-8.1a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
-  <symbol id="i-reg" viewBox="301 144 343 303"><path fill="currentColor" fill-rule="evenodd" d="M305 148 H492.5 A147.5 147.5 0 0 1 492.5 443 H305 Z M305 203 H537 V228 H305 ZM305 284 H588 V308 H305 ZM305 363 H537 V388 H305 Z"/></symbol>
+  <symbol id="i-reg" viewBox="299 135 268 246"><path fill="none" stroke="currentColor" stroke-width="39.5" d="M303 158.5 H444 A99.5 99.5 0 0 1 444 357.5 H303 M303 224.5 H444 A33.5 33.5 0 0 1 444 291.5 H303"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
 <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a15 15 0 0 1-3 3.6M6.4 7.6A15.4 15.4 0 0 0 2.5 12s3.5 6.5 9.5 6.5a9 9 0 0 0 4.1-1M9.9 9.9a3 3 0 0 0 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
 <symbol id="i-finger" viewBox="0 0 24 24"><path d="M12 11v3.5a8 8 0 0 1-1.2 4.2M8.5 8.8A4 4 0 0 1 16 11v2.2M16 16.5a14 14 0 0 1-.8 3.5M5.2 15.6c.5-1.4.8-2.9.8-4.6a6 6 0 0 1 10.8-3.6M19.1 10.4c.3 1.6.3 3.3 0 5M8.2 20.6c.6-1 1-2.1 1.3-3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
