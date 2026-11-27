@@ -21,7 +21,7 @@
               set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
   let all = LS.get("ledger.jobs", {});           // id -> job (incl. deleted tombstones)
   const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:"",
-    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:1, altCur:"USD"}, LS.get("ledger.settings", {}));
+    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:0, altCur:"USD"}, LS.get("ledger.settings", {}));
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
@@ -70,7 +70,7 @@
   // next thing to deliver: first unfinished phase, else the final delivery
   const phasesOf = (j) => Array.isArray(j.phases) ? j.phases : [];
   function nextDue(j){
-    const p = phasesOf(j).find(x => !x.done && x.due);
+    const p = phasesOf(j).filter(x => !x.done && x.due).sort((a,b) => a.due.localeCompare(b.due))[0];
     return p ? {date:p.due, label:p.title || "مرحلة"} : {date:j.due || "", label:""};
   }
   const isLate = (j) => { const d = nextDue(j).date; return isOpen(j) && !!d && daysUntil(d) < 0; };
@@ -374,7 +374,9 @@
   }
   function todayPanel(){
     const items = upcomingItems().slice(0, 6);
-    const transit = jobs.reduce((a,j)=>a+paysOf(j).filter(p=>!isRecv(p)).length, 0);
+    const pend = jobs.flatMap(j => paysOf(j).filter(p => !isRecv(p)).map(p => ({j, p, age: -daysUntil(p.date || todayStr())})));
+    const lateT = pend.filter(x => x.age > 5).sort((a,b) => b.age - a.age);
+    const transit = pend.length - lateT.length;
     const rows = items.map(it => {
       const j = it.j;
       if (it.kind === "meet") return h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
@@ -387,6 +389,10 @@
         h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم", it.label ? h("span",{class:"tag"}, it.label) : null), h("div",{class:"s"}, j.client||"—")),
         cdChip(j));
     });
+    for (const {j, p, age} of lateT.slice(0, 3)) rows.unshift(h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+      h("div",{class:"timebox",style:"background:var(--bad-soft)"}, h("b",null,"⏳"), h("span",null,"")),
+      h("div",{class:"grow"}, h("div",{class:"t"}, "تحويل متأخر " + dayWord(age) + ": " + money(p.amount, curOf(j))), h("div",{class:"s"}, (j.client || "") + " · " + (j.title || ""))),
+      h("span",{class:"cd c-late"},"تابع")));
     if (transit) rows.push(h("li",{tabindex:"0",onclick:()=>go("money")},
       h("div",{class:"timebox"}, h("b",null,"⏳"), h("span",null,"")),
       h("div",{class:"grow"}, h("div",{class:"t"}, "مدفوعات قيد التحويل"), h("div",{class:"s"}, transit + " دفعة لم تصل لحسابك بعد")),
@@ -711,7 +717,7 @@
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"شاشة البداية")),
         h("div",null,
-          h("p",null,"دعاء قصير عند فتح التطبيق، ويُغلق وحده بعد 3 ثوانٍ أو بلمسة."),
+          h("p",null,"دعاء قصير عند فتح التطبيق، ويُغلق وحده بعد ثوانٍ قليلة أو بلمسة."),
           h("div",{class:"picks"}, ...[["daily","أول مرة في اليوم"],["always","كل مرة"],["off","إيقاف"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(settings.splash===k),onclick:()=>{settings.splash=k; saveSettings(); render();}}, t))))),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"الزكاة")),
@@ -788,12 +794,12 @@
   }
 
   // ---------- add / edit form ----------
-  const wz = {id:null, types:[], cur:"EGP", phases:[], finishAuto:true, onSaved:null};
+  const wz = {id:null, types:[], cur:"EGP", phases:[], finishAuto:true, depRecv:true, onSaved:null};
   const daysBetween = (a, b) => { const x = parseD(a), y = parseD(b); return x && y ? Math.round((y - x) / 86400000) : ""; };
   const CUR_ORDER = ["EGP","SAR","USD","AED","KWD","EUR"];
   function openForm(id, preset){
     const j = id ? all[id] : null;
-    wz.id = id; wz.onSaved = preset?.onSaved || null;
+    wz.id = id; wz.onSaved = preset?.onSaved || null; wz.depRecv = true;
     $("wzTitle").textContent = j ? "تعديل المشروع" : "مشروع جديد";
     $("wzSave").textContent = j ? "حفظ التعديلات" : "حفظ المشروع";
     const src = j || preset || {};
@@ -810,7 +816,7 @@
     $("fDue").value = src.due || "";
     $("fFinish").value = src.finish || "";
     wz.finishAuto = !src.finish;
-    wz.phases = phasesOf(src).map(p => ({...p}));
+    wz.phases = backfillPhases(phasesOf(src), src.start);
     $("fDays").value = src.due ? daysBetween($("fStart").value || todayStr(), src.due) : "";
     $("fNotes").value = src.notes || "";
     wz.types = typesOf(src).filter(t => TYPES.includes(t));
@@ -835,7 +841,12 @@
     updateRemLine();
     syncDates($("wizDlg"));
   }
+  function renderDepRecv(){
+    $("depRecv").hidden = !!wz.id || !n($("fDeposit").value);
+    $("depRecv").replaceChildren(...[[true,"وصل حسابي"],[false,"قيد التحويل"]].map(([v,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(wz.depRecv===v),onclick:()=>{wz.depRecv=v; renderDepRecv();}}, t)));
+  }
   function updateRemLine(){
+    renderDepRecv();
     const el = $("remLine"), price = n($("fPrice").value);
     const paid = wz.id && all[wz.id] ? paidOf(all[wz.id]) : n($("fDeposit").value);
     if (!$("fPrice").value || !price){ el.hidden = true; return; }
@@ -844,39 +855,50 @@
   }
   $("fPrice").addEventListener("input", updateRemLine);
   $("fDeposit").addEventListener("input", updateRemLine);
-  // phases: each phase starts when the previous one ends
-  function phaseDates(){
-    let cur = $("fStart").value || todayStr();
-    for (const p of wz.phases){ cur = addDays(cur, n(p.days)); p.due = cur; }
+  // phases: each phase has its own start and end; the whole project runs from the first start to the last end
+  function backfillPhases(list, start){
+    let cur = start || todayStr();
+    return list.map(p => { const st = p.start || cur, du = p.due || addDays(st, n(p.days) || 7); cur = du; return {...p, start:st, due:du}; });
   }
+  const phaseCount = (k) => k === 1 ? "مرحلة واحدة" : k === 2 ? "مرحلتين" : k + " مراحل";
   function syncFromPhases(){
-    phaseDates();
     const has = wz.phases.length > 0;
-    $("daysRow").classList.toggle("computed", has);
-    $("fDays").readOnly = has; $("fDue").readOnly = has;
+    $("daysRow").classList.toggle("computed", has); $("startRow").classList.toggle("computed", has);
+    $("fDays").readOnly = has; $("fDue").readOnly = has; $("fStart").readOnly = has;
+    $("phSum").hidden = !has;
     if (has){
-      $("fDays").value = wz.phases.reduce((a,p)=>a+n(p.days),0);
-      $("fDue").value = wz.phases[wz.phases.length-1].due;
-      if (wz.finishAuto) $("fFinish").value = addDays($("fDue").value, -1);
-      document.querySelectorAll("#phases .ph-date").forEach((el,i) => el.textContent = "← " + dlong(wz.phases[i].due));
+      const starts = wz.phases.map(p => p.start).filter(Boolean).sort(), ends = wz.phases.map(p => p.due).filter(Boolean).sort();
+      const s0 = starts[0] || todayStr(), e1 = ends[ends.length-1] || s0, total = daysBetween(s0, e1);
+      $("fStart").value = s0; $("fDue").value = e1; $("fDays").value = total;
+      if (wz.finishAuto) $("fFinish").value = addDays(e1, -1);
+      $("phSum").replaceChildren("المشروع كله: من ", h("b",null, dshort(s0)), " لـ ", h("b",null, dshort(e1)), " · " + dayWord(total) + " · " + phaseCount(wz.phases.length));
     }
     syncDates($("wizDlg"));
   }
   function renderPhases(){
-    phaseDates();
-    $("phases").replaceChildren(...wz.phases.map((p, i) => h("div",{class:"ph-row"},
-      h("input",{value:p.title||"",placeholder:"المرحلة " + (i+1) + " (مثلاً: اللوجو)","aria-label":"اسم المرحلة",oninput:e=>{p.title=e.target.value;}}),
-      h("input",{type:"number",min:"1",inputmode:"numeric",value:p.days||"",placeholder:"أيام","aria-label":"عدد الأيام",oninput:e=>{p.days=n(e.target.value); syncFromPhases();}}),
-      h("span",{class:"ph-date"}, p.due ? "← " + dlong(p.due) : ""),
-      h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف المرحلة",onclick:()=>{wz.phases.splice(i,1); renderPhases();}}, icon("i-x")))));
+    $("phases").replaceChildren(...wz.phases.map((p, i) => {
+      const sIn = h("input",{type:"date",value:p.start||"","aria-label":"تبدأ"});
+      const eIn = h("input",{type:"date",value:p.due||"","aria-label":"تخلص"});
+      const dIn = h("input",{type:"number",min:"1",inputmode:"numeric",value:p.start && p.due ? daysBetween(p.start, p.due) : "","aria-label":"عدد الأيام"});
+      sIn.addEventListener("input", () => { p.start = sIn.value; if (p.start && dIn.value !== ""){ p.due = addDays(p.start, n(dIn.value)); eIn.value = p.due; } syncFromPhases(); });
+      eIn.addEventListener("input", () => { p.due = eIn.value; dIn.value = p.start && p.due ? daysBetween(p.start, p.due) : ""; syncFromPhases(); });
+      dIn.addEventListener("input", () => { if (p.start && dIn.value !== ""){ p.due = addDays(p.start, n(dIn.value)); eIn.value = p.due; } syncFromPhases(); });
+      return h("div",{class:"ph-card"},
+        h("div",{class:"ph-top"}, h("span",{class:"ph-n num"}, String(i+1)),
+          h("input",{class:"ph-title",value:p.title||"",placeholder:"اسم المرحلة (مثلاً: اللوجو)","aria-label":"اسم المرحلة",oninput:e=>{p.title=e.target.value;}}),
+          h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف المرحلة",onclick:()=>{wz.phases.splice(i,1); renderPhases();}}, icon("i-x"))),
+        h("div",{class:"ph-dates"}, h("label",{class:"f"},"تبدأ", sIn), h("label",{class:"f"},"تخلص", eIn), h("label",{class:"f ph-days"},"أيام", dIn)));
+    }));
     $("addPhase").lastChild.textContent = wz.phases.length ? "مرحلة أخرى" : "تقسيم التسليم على مراحل";
     syncFromPhases();
   }
   $("addPhase").addEventListener("click", () => {
-    if (!wz.phases.length) wz.phases.push({id:newId(), title:"", days: n($("fDays").value) || 7});
-    else wz.phases.push({id:newId(), title:"", days:7});
+    const last = wz.phases[wz.phases.length-1];
+    const start = last && last.due ? last.due : ($("fStart").value || todayStr());
+    const days = !wz.phases.length ? (n($("fDays").value) || 7) : 7;
+    wz.phases.push({id:newId(), title:"", start, due:addDays(start, days)});
     renderPhases();
-    const ins = $("phases").querySelectorAll(".ph-row input:first-child"); ins[ins.length-1].focus();
+    const ins = $("phases").querySelectorAll(".ph-title"); ins[ins.length-1].focus();
   });
   $("fDays").addEventListener("input", () => {
     if (wz.phases.length) return;
@@ -892,7 +914,7 @@
     if (wz.finishAuto && $("fDue").value) $("fFinish").value = addDays($("fDue").value, -1);
   });
   $("fFinish").addEventListener("input", () => { wz.finishAuto = !$("fFinish").value; });
-  $("fStart").addEventListener("input", () => { if (wz.phases.length) syncFromPhases(); else if ($("fDays").value !== "") $("fDays").dispatchEvent(new Event("input")); });
+  $("fStart").addEventListener("input", () => { if (wz.phases.length) return; else if ($("fDays").value !== "") $("fDays").dispatchEvent(new Event("input")); });
   $("wzClose").onclick = $("wzCancel").onclick = () => $("wizDlg").close();
   $("wzForm").addEventListener("submit", e => { e.preventDefault(); saveForm(); });
   function saveForm(){
@@ -908,10 +930,9 @@
       price:n($("fPrice").value), currency:wz.cur, revisions: $("fRevs").value === "" ? "" : n($("fRevs").value),
       start, due:$("fDue").value, finish:$("fFinish").value, notes:$("fNotes").value.trim()
     });
-    phaseDates();
-    data.phases = wz.phases.filter(p => n(p.days) > 0).map((p,i) => ({id:p.id || newId(), title:(p.title||"").trim() || "المرحلة " + (i+1), days:n(p.days), due:p.due, done:!!p.done, doneDate:p.doneDate||""}));
-    if (data.phases.length) data.due = data.phases[data.phases.length-1].due;
-    if (!j){ const dep = n($("fDeposit").value); if (dep > 0) data.payments = [stampPay({amount:dep, date:start||todayStr(), note:"عربون", rate: n($("fRate").value) || null}, wz.cur)]; }
+    data.phases = wz.phases.filter(p => p.start && p.due).map((p,i) => ({id:p.id || newId(), title:(p.title||"").trim() || "المرحلة " + (i+1), start:p.start, due:p.due, days:daysBetween(p.start, p.due), done:!!p.done, doneDate:p.doneDate||""}));
+    if (data.phases.length){ data.start = data.phases.map(p=>p.start).sort()[0]; data.due = data.phases.map(p=>p.due).sort().pop(); }
+    if (!j){ const dep = n($("fDeposit").value); if (dep > 0) data.payments = [stampPay({amount:dep, date:start||todayStr(), note:"عربون", rate: n($("fRate").value) || null, ...(wz.depRecv ? {} : {received:false})}, wz.cur)]; }
     const id = wz.id || newId();
     store.save(id, data);
     $("wizDlg").close();
@@ -996,7 +1017,7 @@
             h("input",{type:"checkbox",checked:p.done?true:null,"aria-label":"تمت المرحلة",onchange:e=>{
               const nx = bodyOf(j); nx.phases = phasesOf(j).map((q,k) => k===i ? {...q, done:e.target.checked, doneDate:e.target.checked?todayStr():""} : q);
               store.save(j.id, nx); if (e.target.checked) toast("تمت مرحلة «" + (p.title||"") + "» ✓"); }}),
-            h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1)))),
+            h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1))), h("div",{class:"hint"}, (p.start ? "من " + dshort(p.start) + " لـ " : "حتى ") + dshort(p.due))),
             h("span",{class:"cd " + (p.done ? "c-done" : daysUntil(p.due) < 0 ? "c-late" : daysUntil(p.due) <= 2 ? "c-soon" : "c-ok")}, p.done ? "تمت" : dshort(p.due)))))) : null,
         h("div",{class:"blk"},
           h("div",{style:"display:flex;align-items:center;gap:8px"}, h("h3",{style:"margin:0;flex:1"},"الاجتماعات"),
@@ -1252,12 +1273,15 @@
     if (settings.lock.cred && !document.documentElement.hasAttribute("data-splash")) setTimeout(tryBio, 250);
   }
   function unlockNow(){ document.documentElement.removeAttribute("data-locked"); settings.lock.fails = 0; settings.lock.until = 0; saveSettings(); lastHidden = 0; }
+  let bioBusy = false;
   async function tryBio(){
-    if (!settings.lock.cred || !window.PublicKeyCredential) return;
+    if (!settings.lock.cred || !window.PublicKeyCredential || bioBusy) return;
+    bioBusy = true;
     try {
       await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)), allowCredentials:[{type:"public-key", id:unb64u(settings.lock.cred)}], userVerification:"required", timeout:60000}});
       unlockNow();
     } catch(e){ lockUI.msg = ""; renderLock(); }
+    finally { setTimeout(() => { bioBusy = false; }, 800); }
   }
   async function pressKey(k){
     if (Date.now() < (settings.lock.until || 0)){ lockUI.msg = "محاولات كثيرة. انتظر دقيقة."; renderLock(); return; }
@@ -1298,8 +1322,9 @@
   document.addEventListener("keydown", e => { if (!isLocked() || lockUI.forgot) return; if (/^[0-9]$/.test(e.key)) pressKey(e.key); else if (e.key === "Backspace") pressKey("del"); });
   let lastHidden = 0;
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden){ lastHidden = Date.now(); return; }
-    if (settings.lock && settings.lock.on && !isLocked() && lastHidden && Date.now() - lastHidden >= n(settings.lockAfter) * 60000) lockNow();
+    if (document.hidden){ if (!bioBusy) lastHidden = Date.now(); return; }
+    if (bioBusy) return;
+    if (settings.lock && settings.lock.on && !isLocked() && n(settings.lockAfter) >= 0 && lastHidden && Date.now() - lastHidden >= n(settings.lockAfter) * 60000) lockNow();
   });
   async function enableBio(){
     try {
@@ -1333,8 +1358,8 @@
       h("button",{class:"btn primary sm",type:"button",style:"align-self:flex-start",onclick:()=>{setup.step=1;render();setTimeout(()=>$("pinIn")?.focus(),30);}}, "تفعيل قفل التطبيق")];
     return [h("div",{class:"row-btns"}, h("span",{class:"cd c-done"},"✓ القفل مفعّل"),
         L.cred ? h("span",{class:"cd c-done"},"✓ البصمة") : bioAvail ? h("button",{class:"btn sm",type:"button",onclick:enableBio}, icon("i-finger"), "تفعيل البصمة") : null),
-      h("div",null, h("span",{class:"flabel"},"يُقفل بعد الخروج منه"),
-        h("div",{class:"picks"}, ...[[0,"فوراً"],[1,"دقيقة"],[5,"5 دقائق"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(n(settings.lockAfter)===k),onclick:()=>{settings.lockAfter=k;saveSettings();render();}}, t)))),
+      h("div",null, h("span",{class:"flabel"},"يُقفل بعد الخروج منه"), n(settings.lockAfter) < 0 ? h("div",{class:"note"},"«مفتوح»: يطلب الرمز فقط عند فتح التطبيق من جديد.") : null,
+        h("div",{class:"picks"}, ...[[0,"فوراً"],[0.5,"30 ثانية"],[1,"دقيقة"],[2,"دقيقتين"],[-1,"مفتوح"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(n(settings.lockAfter)===k),onclick:()=>{settings.lockAfter=k;saveSettings();render();}}, t)))),
       h("div",{class:"row-btns"},
         h("button",{class:"btn sm",type:"button",onclick:()=>{setup.step=1;render();setTimeout(()=>$("pinIn")?.focus(),30);}},"تغيير الرمز"),
         L.cred ? h("button",{class:"btn sm ghost",type:"button",onclick:()=>{delete settings.lock.cred;saveSettings();render();}},"إيقاف البصمة") : null,
@@ -1348,7 +1373,7 @@
     const sp = $("splash"); let done = false;
     const hide = () => { if (done) return; done = true; sp.classList.add("out");
       setTimeout(() => { document.documentElement.removeAttribute("data-splash"); sp.classList.remove("out"); if (isLocked() && settings.lock.cred) tryBio(); }, 350); };
-    setTimeout(hide, 3000); sp.addEventListener("click", hide);
+    setTimeout(hide, 4500); sp.addEventListener("click", hide);
   }
 
   // ---------- boot ----------

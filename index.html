@@ -466,14 +466,14 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 :root[data-splash] #splash{display:flex}
 #splash{position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px max(24px,env(safe-area-inset-left,0px));text-align:center;color:#fff;cursor:pointer;
   background:radial-gradient(120% 60% at 100% 0%,rgba(59,130,246,.35),transparent 60%),radial-gradient(90% 50% at 0% 100%,rgba(124,58,237,.45),transparent 65%),linear-gradient(180deg,#0B1424,#101B35)}
-#splash svg{width:84px;height:74px;color:#F3F6FA}
+#splash svg{width:84px;height:74px;color:#F3F6FA;margin-bottom:26px}
 #splash .bism{font-family:var(--f-display);font-size:1.15rem;opacity:.85}
 #splash .dua{font-size:1.45rem;line-height:1.9;max-width:520px;font-weight:600}
 #splash .src{font-size:.82rem;opacity:.65}
 #splash .bar{width:120px;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
 #splash .bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#22D3EE,#A78BFA);transform-origin:right}
 #splash.out{opacity:0;transition:opacity .35s}
-@media (prefers-reduced-motion:no-preference){#splash .bar i{animation:spl 3s linear forwards}@keyframes spl{from{transform:scaleX(0)}to{transform:scaleX(1)}}#splash .dua{animation:rise .6s ease-out both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
+@media (prefers-reduced-motion:no-preference){#splash .bar i{animation:spl 4.5s linear forwards}@keyframes spl{from{transform:scaleX(0)}to{transform:scaleX(1)}}#splash .dua{animation:rise .6s ease-out both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
 /* lock */
 #lock{display:none}
 :root[data-locked] #lock{display:flex}
@@ -499,6 +499,13 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 #praise span{color:#fff;font-size:.95rem;background:rgba(15,23,42,.55);padding:4px 14px;border-radius:999px}
 @media (prefers-reduced-motion:no-preference){#praise:not([hidden]){animation:pr 2.2s ease both}@keyframes pr{0%{opacity:0}12%{opacity:1}80%{opacity:1}100%{opacity:0}}#praise:not([hidden]) b{animation:prb 2.2s cubic-bezier(.2,.8,.2,1) both}@keyframes prb{0%{transform:scale(.85)}20%{transform:scale(1.04)}30%{transform:scale(1)}100%{transform:scale(1)}}}
 
+.ph-sum{background:var(--grad-soft);border-radius:10px;padding:10px 12px;font-size:.9rem;margin-bottom:8px}
+.ph-card{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--card)}
+.ph-top{display:flex;gap:8px;align-items:center}
+.ph-n{width:26px;height:26px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-size:.8rem;font-weight:600;flex:none}
+.ph-title{flex:1;min-width:0;border:1px solid var(--line);background:var(--soft);border-radius:8px;padding:8px 10px;color:var(--ink)}
+.ph-dates{display:grid;grid-template-columns:1fr 1fr 70px;gap:8px}
+.ph-dates label.f input{padding:8px 10px}
 .rem-line{font-size:.9rem;color:var(--muted);margin-top:-4px}
 .rem-line b{color:var(--owed);font-weight:600}
 /* v3: slim WhatsApp bar, labelled hide button, second currency */
@@ -631,6 +638,7 @@ var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").tex
         <div class="full"><span class="flabel">العملة</span><div class="picks" id="curPicks"></div></div>
         <label class="f money-in" id="lPrice"><span>السعر <span class="req">*</span></span><input id="fPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="0"><em class="cur"></em></label>
         <label class="f money-in" id="lDeposit">العربون المدفوع<input id="fDeposit" type="number" min="0" step="any" inputmode="decimal" placeholder="0"><em class="cur"></em></label>
+        <div class="full picks" id="depRecv" hidden></div>
         <div class="full rem-line" id="remLine" hidden></div>
         <label class="f full" id="lRate" hidden><span id="lRateT">سعر الصرف</span><input id="fRate" type="number" min="0" step="any" inputmode="decimal" placeholder="يُحدَّث تلقائياً عند الاتصال"><span class="hint">يُحتسب العربون بهذا السعر.</span></label>
       </div>
@@ -638,11 +646,12 @@ var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").tex
         <label class="f">مدة التسليم (أيام)<input id="fDays" type="number" min="0" step="1" inputmode="numeric" placeholder="مثلاً 8"></label>
         <label class="f">موعد التسليم للعميل<input id="fDue" type="date"></label>
       </div>
-      <div class="fgrid">
+      <div class="fgrid" id="startRow">
         <label class="f">تاريخ البدء<input id="fStart" type="date"></label>
         <label class="f">موعد الإنجاز الداخلي<input id="fFinish" type="date"></label>
       </div>
       <div>
+        <div class="ph-sum" id="phSum" hidden></div>
         <div class="phases" id="phases"></div>
         <button class="btn ghost sm" type="button" id="addPhase" style="color:var(--accent);padding-inline:0;margin-top:4px"><svg><use href="#i-plus"/></svg>تقسيم التسليم على مراحل</button>
       </div>
