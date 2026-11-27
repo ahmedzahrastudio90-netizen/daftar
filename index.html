@@ -498,6 +498,24 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 #praise b{font-family:var(--f-display);font-size:3rem;font-weight:600;background:linear-gradient(135deg,#FDE68A,#F59E0B 45%,#FBBF24 70%,#FEF3C7);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 6px 24px rgba(245,158,11,.45))}
 #praise span{color:#fff;font-size:.95rem;background:rgba(15,23,42,.55);padding:4px 14px;border-radius:999px}
 @media (prefers-reduced-motion:no-preference){#praise:not([hidden]){animation:pr 2.2s ease both}@keyframes pr{0%{opacity:0}12%{opacity:1}80%{opacity:1}100%{opacity:0}}#praise:not([hidden]) b{animation:prb 2.2s cubic-bezier(.2,.8,.2,1) both}@keyframes prb{0%{transform:scale(.85)}20%{transform:scale(1.04)}30%{transform:scale(1)}100%{transform:scale(1)}}}
+
+/* v3: slim WhatsApp bar, labelled hide button, second currency */
+.wa-bar{display:flex;align-items:center;gap:12px;width:100%;border:1px solid rgba(31,168,85,.25);background:linear-gradient(135deg,rgba(31,168,85,.12),rgba(6,182,212,.08)),var(--card);border-radius:12px;padding:10px 14px;color:var(--ink);text-align:start;font:inherit;cursor:pointer}
+.wa-bar:hover{border-color:var(--wa)}
+.wa-bar .ic{width:34px;height:34px;border-radius:9px;background:var(--wa);color:#fff;display:grid;place-items:center;flex:none}
+.wa-bar .ic svg{width:20px;height:20px}
+.wa-bar b{flex:1;font-weight:600}
+.wa-bar .chev{width:18px;height:18px;color:var(--muted)}
+.sec-h{display:flex;align-items:center;gap:10px;margin-bottom:-6px}
+.sec-h h2{font-size:1.05rem;font-weight:600;margin-inline-end:auto}
+.eye-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:.86rem;font-weight:500;cursor:pointer}
+.eye-pill svg{width:18px;height:18px}
+.eye-pill[aria-pressed="true"]{background:var(--grad-soft);border-color:#3B82F6}
+.alt-cur{display:block;font-size:.8rem;font-family:var(--f-body);font-weight:500;color:var(--muted);margin-top:2px}
+.kpis .kpi:first-child .alt-cur{color:rgba(255,255,255,.85)}
+.sumgrid .alt-cur{font-size:.72rem}
+.owed{text-align:end}
+.owed .alt-cur{font-size:.72rem}
 /* ---------- modern gradient layer ---------- */
 :root{
   --grad:linear-gradient(135deg,#06B6D4 0%,#3B82F6 55%,#7C3AED 100%);
@@ -588,7 +606,7 @@ var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").tex
       <button class="btn wa" type="button" data-wa><svg><use href="#i-wa"/></svg>واتساب</button>
     </div>
     <header class="topbar">
-      <h1><span id="pageTitle">الرئيسية</span><button class="eye" type="button" id="eyeBtn" aria-label="إخفاء المبالغ"><svg><use href="#i-eye"/></svg></button></h1>
+      <h1 id="pageTitle">الرئيسية</h1>
       <button class="btn primary" type="button" data-add><svg><use href="#i-plus"/></svg>مشروع جديد</button>
     </header>
     <main class="content" id="content"></main>

@@ -21,7 +21,7 @@
               set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
   let all = LS.get("ledger.jobs", {});           // id -> job (incl. deleted tombstones)
   const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:"",
-    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:1}, LS.get("ledger.settings", {}));
+    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:1, altCur:"USD"}, LS.get("ledger.settings", {}));
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
@@ -247,11 +247,11 @@
   });
 
   // ---------- hide amounts ----------
-  function renderEye(){
-    const b = $("eyeBtn"); b.replaceChildren(icon(settings.hideMoney ? "i-eyeoff" : "i-eye"));
-    b.setAttribute("aria-label", settings.hideMoney ? "إظهار المبالغ" : "إخفاء المبالغ"); b.title = b.getAttribute("aria-label");
-  }
-  $("eyeBtn").addEventListener("click", () => { settings.hideMoney = !settings.hideMoney; saveSettings(); render(); });
+  const toggleMoney = () => { settings.hideMoney = !settings.hideMoney; saveSettings(); render(); };
+  const reveal = () => { if (settings.hideMoney){ settings.hideMoney = false; saveSettings(); render(); return true; } return false; };
+  const eyeBtn = () => h("button",{class:"eye-pill",type:"button",onclick:toggleMoney,"aria-pressed":String(settings.hideMoney)},
+    icon(settings.hideMoney ? "i-eye" : "i-eyeoff"), settings.hideMoney ? "إظهار المبالغ" : "إخفاء المبالغ");
+  function moneyHead(){ return h("div",{class:"sec-h"}, h("h2",null,"حساباتك"), eyeBtn()); }
 
   // ---------- navigation ----------
   function go(v){ view = v; try{ history.replaceState(null,"","#"+v); }catch(e){} render(); window.scrollTo(0,0); }
@@ -271,7 +271,6 @@
   function render(){
     renderNav(); renderSync(); clearTimeout(render._r); render._r = setTimeout(reminders, 400);
     $("pageTitle").textContent = VIEWS.find(v=>v[0]===view)[1];
-    renderEye();
     const nodes = view === "home" ? viewHome() : view === "jobs" ? (jobsTab === "clients" ? viewClients() : viewJobs()) : view === "money" ? viewMoney() : viewSettings();
     if (view === "jobs" && (jobs.length || jobsTab === "clients")) nodes.unshift(h("div",{class:"seg",role:"tablist",style:"align-self:flex-start"},
       h("button",{type:"button","aria-pressed":String(jobsTab==="projects"),onclick:()=>{jobsTab="projects";render();}},"المشاريع"),
@@ -354,7 +353,15 @@
   function monthsOfYear(y){ const now = new Date(), last = String(now.getFullYear()) === y ? now.getMonth() : 11; const out = []; for (let i = 0; i <= last; i++) out.push(y + "-" + String(i+1).padStart(2,"0")); return out; }
   function yearNet(y){ let inc = 0, exp = 0; for (const ym of monthsOfYear(y)){ inc += income(ym).base; exp += expTotal(ym).base; } return {inc, exp, net: inc - exp, months: monthsOfYear(y).length}; }
   const dueTotals = () => totals(jobs.map(j => { const cur = curOf(j), r = remOf(j); return {amount:r, cur, base: rateNow(cur) ? r * rateNow(cur) : null}; }));
-  const big = (v) => [fmt(Math.round(v)), h("small",null,CUR[settings.currency])];
+  // the same amount in your second currency (dollar by default), small, under the main number
+  const altCode = () => settings.altCur && settings.altCur !== settings.currency && CUR[settings.altCur] ? settings.altCur : (settings.currency === "USD" ? "EGP" : "USD");
+  function altText(baseAmount){
+    if (settings.hideMoney) return "";
+    const c = altCode(), r = c === settings.currency ? 1 : rateNow(c);
+    if (!r || !baseAmount) return "";
+    return "≈ " + rawFmt(Math.round(baseAmount / r)) + " " + CUR[c];
+  }
+  const big = (v) => [fmt(Math.round(v)), h("small",null,CUR[settings.currency]), altText(v) ? h("span",{class:"alt-cur num"}, altText(v)) : null];
 
   // ---------- home ----------
   function upcomingItems(){
@@ -392,7 +399,7 @@
     const now = new Date(), ym = todayStr().slice(0,7), y = String(now.getFullYear());
     const mIn = income(ym), mEx = expTotal(ym), yr = yearNet(y), due = dueTotals();
     const owing = clientsList().filter(c=>Object.values(c.rem).some(v=>v>0)).length;
-    const kpi = (cls, lbl, val, foot) => h("div",{class:"kpi "+cls,tabindex:"0",role:"button",onclick:()=>go("money"),onkeydown:e=>{if(e.key==="Enter")go("money")}},
+    const kpi = (cls, lbl, val, foot) => h("div",{class:"kpi "+cls,tabindex:"0",role:"button",title:settings.hideMoney?"اضغط لإظهار المبالغ":"",onclick:()=>{ if (!reveal()) go("money"); },onkeydown:e=>{if(e.key==="Enter"){ if (!reveal()) go("money"); }}},
       h("div",{class:"lbl"}, lbl), h("div",{class:"val num"}, val), h("div",{class:"foot"}, foot));
     return h("section",{class:"kpis","aria-label":"الحسابات"},
       kpi("", "صافي " + MONTHS[now.getMonth()], big(mIn.base - mEx.base), "دخل " + fmt(Math.round(mIn.base)) + " · مصاريف " + fmt(Math.round(mEx.base))),
@@ -400,8 +407,8 @@
       kpi("", "صافي " + y, big(yr.net), "متوسط الشهر " + fmt(Math.round(yr.net / Math.max(1, yr.months)))));
   }
   function viewHome(){
-    if (!jobs.length && !expenses.length) return [installCard(), waCard(), emptyFirst()];
-    return [installCard(), todayPanel(), moneyCards(), waCard()];
+    if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
+    return [waCard(), installCard(), todayPanel(), moneyHead(), moneyCards()];
   }
 
   // ---------- accounts ----------
@@ -413,13 +420,15 @@
     const exList = expensesIn(ym).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
     const months = monthsOfYear(y).map(k => ({k, net: income(k).base - expTotal(k).base, inc: income(k).base})).filter((m,i,arr) => m.inc || expTotal(m.k).base || i === arr.length-1);
     const maxV = Math.max(1, ...months.map(m => Math.abs(m.net)));
+    const cell = (lbl, v, cls, style) => h("div",{class:cls||"",onclick:reveal}, h("span",null,lbl), h("b",{class:"num",style:style||""}, fmt(Math.round(v))), altText(v) ? h("small",{class:"alt-cur num"}, altText(v)) : null);
     return [
+      h("div",{class:"sec-h"}, h("span",{style:"margin-inline-end:auto"}), eyeBtn()),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null, MONTHS[now.getMonth()] + " " + y), h("button",{class:"btn primary sm",type:"button",onclick:()=>openExp(null)}, icon("i-plus"), "مصروف")),
         h("div",{class:"sumgrid"},
-          h("div",null, h("span",null,"الدخل"), h("b",{class:"num",style:"color:var(--ok)"}, fmt(Math.round(mIn.base)))),
-          h("div",null, h("span",null,"المصاريف"), h("b",{class:"num",style:"color:var(--bad)"}, fmt(Math.round(mEx.base)))),
-          h("div",{class:"net"}, h("span",null,"الصافي"), h("b",{class:"num"}, fmt(Math.round(mIn.base - mEx.base)))))),
+          cell("الدخل", mIn.base, "", "color:var(--ok)"),
+          cell("المصاريف", mEx.base, "", "color:var(--bad)"),
+          cell("الصافي", mIn.base - mEx.base, "net"))),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"مصاريف الشغل"), h("span",{class:"hint"}, "هذا الشهر")),
         exList.length ? h("ul",{class:"xlist"}, ...exList.map(e => h("li",{tabindex:"0",onclick:()=>openExp(e.id)},
@@ -437,7 +446,7 @@
           h("li",{tabindex:"0",onclick:()=>showClient(c.name),onkeydown:e=>{if(e.key==="Enter")showClient(c.name)}},
             h("span",{class:"avatar"}, initials(c.name)),
             h("div",{class:"grow"}, h("div",{class:"t"}, c.name), h("div",{class:"s"}, c.phone || " ")),
-            h("span",{class:"amt num"}, moneyMap(c.rem))))) : h("div",{class:"pempty"},"لا توجد مستحقات.")),
+            owedCell(c.rem)))) : h("div",{class:"pempty"},"لا توجد مستحقات.")),
       zakatPanel(),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"صافي الدخل · " + y), h("b",{class:"num",style:"color:var(--ok)"}, money(Math.round(yearNet(y).net)))),
@@ -446,6 +455,14 @@
           h("span",{class:"barw"}, h("i",{style:"width:"+(Math.max(0,m.net)/maxV*100).toFixed(1)+"%"})),
           h("b",{class:"num",style:m.net<0?"color:var(--bad)":""}, money(Math.round(m.net)))); })))
     ];
+  }
+
+  function owedCell(rem){ // e.g. "200 $" and under it "≈ 10,000 ج.م"
+    const keys = Object.keys(rem).filter(k => rem[k] > 0);
+    const foreign = keys.some(k => k !== settings.currency);
+    const baseSum = keys.reduce((a,k) => a + (k === settings.currency ? rem[k] : (rateNow(k) ? rem[k] * rateNow(k) : 0)), 0);
+    return h("div",{class:"owed"}, h("span",{class:"amt num"}, moneyMap(rem)),
+      foreign && !settings.hideMoney && baseSum ? h("small",{class:"alt-cur num"}, "≈ " + rawFmt(Math.round(baseSum)) + " " + CUR[settings.currency]) : null);
   }
 
   // ---------- zakat / sadaqa per finished project ----------
@@ -536,10 +553,8 @@
   });
 
   function waCard(){
-    return h("div",{class:"wa-card"},
-      h("span",{class:"ic"}, icon("i-wa")),
-      h("div",{class:"tx"}, h("b",null,"اتفاق جديد على واتساب؟"), h("span",null,"الصق رسائل الاتفاق، ويستخرج الدفتر العميل والسعر والعربون وموعد التسليم تلقائياً.")),
-      h("button",{class:"btn wa",type:"button",onclick:()=>openWa()}, icon("i-wa"), "استيراد من واتساب"));
+    return h("button",{class:"wa-bar",type:"button",onclick:()=>openWa()},
+      h("span",{class:"ic"}, icon("i-wa")), h("b",null,"الصق اتفاق من واتساب"), icon("i-chev","chev"));
   }
 
   // ---------- jobs ----------
@@ -676,6 +691,8 @@
         h("div",{class:"panel-h"}, h("h2",null,"عام")),
         h("div",null,
           h("label",{class:"f"},"العملة الأساسية", curSel("sCur", settings.currency, e=>{settings.currency=e.target.value; saveSettings(); fetchRates(true); render();})),
+          h("div",null, h("span",{class:"flabel"},"العملة اللي تظهر تحت المبالغ بخط صغير"),
+            h("div",{class:"picks"}, ...CUR_ORDER.filter(k => k !== settings.currency).map(k => h("button",{type:"button",class:"pick","aria-pressed":String(altCode()===k),onclick:()=>{settings.altCur=k; saveSettings(); render();}}, CUR_NAME[k] + " " + CUR[k])))),
           h("div",null,
             h("p",null, settings.rates && settings.rates.base === settings.currency && Object.keys(settings.rates.map).length
               ? "أسعار الصرف (" + new Date(settings.rates.at).toLocaleDateString("ar-EG") + "): " + ["USD","SAR","AED","KWD","EUR"].filter(k=>k!==settings.currency && settings.rates.map[k]).map(k => "1 " + CUR[k] + " = " + fmtRate(settings.rates.map[k]) + " " + CUR[settings.currency]).join(" · ")
