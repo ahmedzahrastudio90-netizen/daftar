@@ -518,6 +518,10 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .cal-tip b{display:block;font-size:.92rem}
 .cal-tip span{font-size:.8rem;color:var(--muted)}
 .mt li{flex-wrap:wrap}
+:root[data-hide] :is(.kpi .val,.kpi .foot,.alt-cur,.sumgrid b,.amt,.owed,.jrem,.jmoney,.mgrid b,.pays .a,.pays .hint,.months b,.zk b,.rem-line b,.mv){filter:blur(7px);user-select:none;-webkit-user-select:none;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){:is(.kpi .val,.kpi .foot,.alt-cur,.sumgrid b,.amt,.owed,.jrem,.jmoney,.mgrid b,.pays .a,.pays .hint,.months b,.zk b,.rem-line b,.mv){transition:filter .2s}}
+.today li.is-late{background:var(--bad-soft)}
+.today li .btn.sm{flex:none}
 .rem-line{font-size:.9rem;color:var(--muted);margin-top:-4px}
 .rem-line b{color:var(--owed);font-weight:600}
 /* v3: slim WhatsApp bar, labelled hide button, second currency */

@@ -50,7 +50,7 @@
   const SVGNS = "http://www.w3.org/2000/svg";
   function icon(id, cls){ const s = document.createElementNS(SVGNS,"svg"); if (cls) s.setAttribute("class",cls); s.setAttribute("aria-hidden","true"); const u = document.createElementNS(SVGNS,"use"); u.setAttribute("href","#"+id); s.append(u); return s; }
   const n = (v) => { const x = Number(v); return isFinite(x) ? x : 0; };
-  const fmt = (v) => settings.hideMoney ? "••••" : n(v).toLocaleString("en-US",{maximumFractionDigits:2});
+  const fmt = (v) => n(v).toLocaleString("en-US",{maximumFractionDigits:2});
   const rawFmt = (v) => n(v).toLocaleString("en-US",{maximumFractionDigits:2});
   const curOf = (j) => CUR[j && j.currency] ? j.currency : settings.currency;
   const money = (v, cur) => fmt(v) + " " + CUR[cur || settings.currency];
@@ -247,6 +247,12 @@
   });
 
   // ---------- hide amounts ----------
+  // amounts stay correct; when hidden they are blurred on screen. Tap a blurred amount to show all.
+  const BLURRED = ".kpi .val,.kpi .foot,.alt-cur,.sumgrid b,.amt,.owed,.jrem,.jmoney,.mgrid b,.pays .a,.pays .hint,.months b,.zk b,.rem-line b,.mv";
+  document.addEventListener("click", e => {
+    if (!settings.hideMoney || !e.target.closest || !e.target.closest(BLURRED)) return;
+    e.preventDefault(); e.stopPropagation(); reveal();
+  }, true);
   const toggleMoney = () => { settings.hideMoney = !settings.hideMoney; saveSettings(); render(); };
   const reveal = () => { if (settings.hideMoney){ settings.hideMoney = false; saveSettings(); render(); return true; } return false; };
   const eyeBtn = () => h("button",{class:"eye-pill",type:"button",onclick:toggleMoney,"aria-pressed":String(settings.hideMoney)},
@@ -269,6 +275,7 @@
   }
 
   function render(){
+    document.documentElement.toggleAttribute("data-hide", !!settings.hideMoney);
     renderNav(); renderSync(); clearTimeout(render._r); render._r = setTimeout(reminders, 400);
     $("pageTitle").textContent = VIEWS.find(v=>v[0]===view)[1];
     const nodes = view === "home" ? viewHome() : view === "jobs" ? (jobsTab === "clients" ? viewClients() : viewJobs()) : view === "money" ? viewMoney() : viewSettings();
@@ -356,7 +363,6 @@
   // the same amount in your second currency (dollar by default), small, under the main number
   const altCode = () => settings.altCur && settings.altCur !== settings.currency && CUR[settings.altCur] ? settings.altCur : (settings.currency === "USD" ? "EGP" : "USD");
   function altText(baseAmount){
-    if (settings.hideMoney) return "";
     const c = altCode(), r = c === settings.currency ? 1 : rateNow(c);
     if (!r || !baseAmount) return "";
     return "≈ " + rawFmt(Math.round(baseAmount / r)) + " " + CUR[c];
@@ -387,15 +393,26 @@
           h("span",{class:"cd " + (today ? "c-soon" : "c-ok")}, relDay(m.date)));
       })));
   }
+  function markArrived(j, idx){
+    const cur = curOf(j), nx = bodyOf(j);
+    nx.payments = paysOf(j).map((q,i) => i === idx ? {...q, received:true, recvDate:todayStr(), ...(cur !== settings.currency && !(q.rate && q.rateBase === settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q);
+    store.save(j.id, nx); praise("تم استلام " + money(paysOf(j)[idx].amount, cur));
+  }
+  function transitPanel(){
+    const list = jobs.flatMap(j => paysOf(j).map((p, i) => ({j, p, i})).filter(x => !isRecv(x.p))).map(x => ({...x, age: -daysUntil(x.p.date || todayStr())}));
+    if (!list.length) return null;
+    list.sort((a,b) => b.age - a.age);
+    return h("section",{class:"panel today"},
+      h("div",{class:"panel-h"}, h("h2",null,"قيد التحويل"), h("span",{class:"hint"},"اضغط «وصلت» عند وصولها لحسابك")),
+      h("ul",{class:"plist"}, ...list.map(({j, p, i, age}) => h("li",{tabindex:"0",class:age > 5 ? "is-late" : "",onclick:()=>openSheet(j.id)},
+        h("div",{class:"timebox",style:age > 5 ? "background:var(--bad-soft)" : ""}, h("b",null,"⏳"), h("span",null,"")),
+        h("div",{class:"grow"}, h("div",{class:"t"}, h("span",{class:"mv num"}, money(p.amount, curOf(j)))), h("div",{class:"s"}, (j.client || "") + " · " + (j.title || ""))),
+        h("span",{class:"cd " + (age > 5 ? "c-late" : "c-ok")}, age <= 0 ? "اليوم" : age > 5 ? "متأخر " + dayWord(age) : "من " + dayWord(age)),
+        h("button",{class:"btn sm",type:"button",onclick:e=>{ e.stopPropagation(); markArrived(j, i); }},"وصلت ✓")))));
+  }
   function deliveriesPanel(){
     const open = jobs.filter(isOpen).sort((a,b) => (nextDue(a).date || "9999").localeCompare(nextDue(b).date || "9999")).slice(0, 6);
-    const pend = jobs.flatMap(j => paysOf(j).filter(p => !isRecv(p)).map(p => ({j, p, age: -daysUntil(p.date || todayStr())})));
-    const lateT = pend.filter(x => x.age > 5).sort((a,b) => b.age - a.age);
-    const transit = pend.length - lateT.length;
-    const rows = lateT.slice(0, 3).map(({j, p, age}) => h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
-      h("div",{class:"timebox",style:"background:var(--bad-soft)"}, h("b",null,"⏳"), h("span",null,"")),
-      h("div",{class:"grow"}, h("div",{class:"t"}, "تحويل متأخر " + dayWord(age) + ": " + money(p.amount, curOf(j))), h("div",{class:"s"}, (j.client || "") + " · " + (j.title || ""))),
-      h("span",{class:"cd c-late"},"تابع")));
+    const rows = [];
     for (const j of open){
       const nd = nextDue(j), d = parseD(nd.date);
       rows.push(h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
@@ -403,10 +420,6 @@
         h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم", nd.label ? h("span",{class:"tag"}, nd.label) : null), h("div",{class:"s"}, j.client||"—")),
         cdChip(j)));
     }
-    if (transit) rows.push(h("li",{tabindex:"0",onclick:()=>go("money")},
-      h("div",{class:"timebox"}, h("b",null,"⏳"), h("span",null,"")),
-      h("div",{class:"grow"}, h("div",{class:"t"}, "مدفوعات قيد التحويل"), h("div",{class:"s"}, transit + " دفعة لم تصل لحسابك بعد")),
-      h("span",{class:"cd c-soon"},"تابع")));
     return h("section",{class:"panel today"},
       h("div",{class:"panel-h"}, h("h2",null,"التسليمات"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="active";jobsTab="projects";go("jobs")}},"كل المشاريع")),
       rows.length ? h("ul",{class:"plist"}, ...rows) : h("div",{class:"pempty"},"لا توجد تسليمات قادمة. يوم موفق 🌿"));
@@ -424,7 +437,7 @@
   }
   function viewHome(){
     if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
-    return [waCard(), installCard(), meetingsPanel(), deliveriesPanel(), moneyHead(), moneyCards()];
+    return [waCard(), installCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards()];
   }
 
   // ---------- accounts ----------
@@ -478,7 +491,7 @@
     const foreign = keys.some(k => k !== settings.currency);
     const baseSum = keys.reduce((a,k) => a + (k === settings.currency ? rem[k] : (rateNow(k) ? rem[k] * rateNow(k) : 0)), 0);
     return h("div",{class:"owed"}, h("span",{class:"amt num"}, moneyMap(rem)),
-      foreign && !settings.hideMoney && baseSum ? h("small",{class:"alt-cur num"}, "≈ " + rawFmt(Math.round(baseSum)) + " " + CUR[settings.currency]) : null);
+      foreign && baseSum ? h("small",{class:"alt-cur num"}, "≈ " + rawFmt(Math.round(baseSum)) + " " + CUR[settings.currency]) : null);
   }
 
   // ---------- zakat / sadaqa per finished project ----------
@@ -1004,7 +1017,7 @@
         h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"}, stPill(j), cdChip(j))),
       h("div",{class:"sh-b"},
         h("div",{class:"blk"},
-          h("h3",null,"الحساب · " + CUR_NAME[cur]),
+          h("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:8px"}, h("h3",{style:"margin:0;flex:1"},"الحساب · " + CUR_NAME[cur]), eyeBtn()),
           h("div",{class:"mgrid"},
             h("div",null, h("span",null,"السعر"), h("b",{class:"num"}, fmt(price))),
             h("div",null, h("span",null,"المدفوع"), h("b",{class:"num",style:"color:var(--ok)"}, fmt(paid))),
