@@ -164,6 +164,26 @@ h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
 .seg button b{font-weight:600;margin-inline-start:4px;font-size:.8rem;opacity:.8}
 .search{flex:1 1 220px;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 12px}
 
+.jtools{display:flex;flex-direction:column;gap:12px}
+.jbar{display:flex;gap:10px;align-items:center}
+.tabs2{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:4px;flex:none}
+.tabs2 button{display:flex;align-items:center;justify-content:center;gap:7px;border:0;background:none;padding:9px 16px;border-radius:10px;color:var(--muted);font:inherit;font-weight:600;font-size:.92rem;cursor:pointer;white-space:nowrap;transition:background .2s,color .2s}
+.tabs2 button svg{width:18px;height:18px}
+.tabs2 button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.06)}
+.tabs2 button[aria-selected=true] svg{color:var(--accent)}
+.search-w{position:relative;flex:1;min-width:0;display:block}
+.search-w svg{position:absolute;inset-inline-start:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);pointer-events:none}
+.search-w .search{width:100%;height:48px;border-radius:14px;padding-inline:44px 14px;font:inherit;font-size:.92rem;color:var(--ink);transition:border-color .2s,box-shadow .2s}
+.search-w .search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 14%,transparent)}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:4px 4px 12px;margin:-4px -4px -12px}
+.chips::-webkit-scrollbar{display:none}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px;padding-inline:14px 7px;font:inherit;font-size:.88rem;font-weight:500;white-space:nowrap;cursor:pointer;transition:all .2s}
+.chip b{min-width:24px;height:22px;padding:0 7px;border-radius:999px;display:inline-grid;place-items:center;font-size:.78rem;font-weight:700;background:var(--soft);color:var(--muted)}
+.chip.zero{color:var(--muted)}
+.chip.warn b{background:var(--bad-soft);color:var(--bad)}
+.chip[aria-pressed=true]{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 6px 18px -6px color-mix(in srgb,var(--accent) 70%,transparent)}
+.chip[aria-pressed=true] b{background:rgba(255,255,255,.22);color:#fff}
+@media (max-width:640px){.jbar{flex-direction:column;align-items:stretch}.tabs2{width:100%}.chips{margin-inline:-16px;padding-inline:16px}.tabs2 button{padding:8px 12px}.search-w .search{height:46px}}
 .jtable{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
 .jhead,.jrow{display:grid;grid-template-columns:minmax(0,2.2fr) 130px 150px minmax(0,1.3fr) 110px 28px;gap:14px;align-items:center;padding:12px 18px}
 .jhead{font-size:.78rem;color:var(--muted);border-bottom:1px solid var(--line);background:var(--soft)}
@@ -629,6 +649,8 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   <symbol id="i-jobs" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 6.5V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5M3.5 12h17" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
   <symbol id="i-clients" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6M15.5 6.2a3 3 0 0 1 0 5.6M17 14.6c1.8.5 3 1.9 3.5 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   <symbol id="i-pay" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6.5 9.5v5M17.5 9.5v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
@@ -785,7 +807,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="parser.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

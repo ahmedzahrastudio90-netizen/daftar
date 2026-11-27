@@ -419,9 +419,6 @@
     renderNav(); renderSync(); clearTimeout(render._r); render._r = setTimeout(reminders, 400);
     $("pageTitle").textContent = VIEWS.find(v=>v[0]===view)[1];
     const nodes = view === "home" ? viewHome() : view === "jobs" ? (jobsTab === "clients" ? viewClients() : viewJobs()) : view === "money" ? viewMoney() : viewSettings();
-    if (view === "jobs" && (jobs.length || jobsTab === "clients")) nodes.unshift(h("div",{class:"seg",role:"tablist",style:"align-self:flex-start"},
-      h("button",{type:"button","aria-pressed":String(jobsTab==="projects"),onclick:()=>{jobsTab="projects";render();}},"المشاريع"),
-      h("button",{type:"button","aria-pressed":String(jobsTab==="clients"),onclick:()=>{jobsTab="clients";render();}},"العملاء")));
     const active = document.activeElement && document.activeElement.id === "search";
     $("content").replaceChildren(...nodes.filter(Boolean));
     if (active){ const s = $("search"); if (s){ s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
@@ -758,13 +755,16 @@
       return (b.delivered||b.due||"").localeCompare(a.delivered||a.due||"");
     });
   }
-  const searchBox = (ph) => h("input",{class:"search",id:"search",type:"search",placeholder:ph,value:query,oninput:e=>{query=e.target.value;render();}});
+  const searchBox = (ph) => h("label",{class:"search-w"}, icon("i-search"), h("input",{class:"search",id:"search",type:"search",placeholder:ph,value:query,oninput:e=>{query=e.target.value;render();}}));
+  const jobsTabs = () => h("div",{class:"tabs2",role:"tablist"},
+    h("button",{type:"button",role:"tab","aria-selected":String(jobsTab==="projects"),onclick:()=>{jobsTab="projects";render();}}, icon("i-jobs"), "المشاريع"),
+    h("button",{type:"button",role:"tab","aria-selected":String(jobsTab==="clients"),onclick:()=>{jobsTab="clients";render();}}, icon("i-user"), "العملاء"));
   function viewJobs(){
     if (!jobs.length) return [emptyFirst()];
     const counts = {active:jobs.filter(isOpen).length, late:jobs.filter(isLate).length, unpaid:jobs.filter(j=>remOf(j)>0).length, done:jobs.filter(j=>j.status==="done").length, all:jobs.length};
-    const tb = h("div",{class:"toolbar"},
-      h("div",{class:"seg",role:"group","aria-label":"فلتر"}, ...FILTERS.map(([k,t]) => h("button",{type:"button","aria-pressed":String(filter===k),onclick:()=>{filter=k;LS.set("ledger.filter",k);render();}}, t, h("b",{class:"num"},counts[k])))),
-      searchBox("ابحث باسم العميل أو المشروع أو الرقم…"));
+    const tb = h("div",{class:"jtools"},
+      h("div",{class:"jbar"}, jobsTabs(), searchBox("ابحث بالعميل أو المشروع أو الرقم")),
+      h("div",{class:"chips",role:"group","aria-label":"فلتر"}, ...FILTERS.map(([k,t]) => h("button",{type:"button",class:"chip" + (k==="late" && counts[k] ? " warn" : "") + (!counts[k] ? " zero" : ""),"aria-pressed":String(filter===k),onclick:()=>{filter=k;LS.set("ledger.filter",k);render();}}, t, h("b",{class:"num"},counts[k])))));
     const list = jobsFiltered();
     if (!list.length) return [tb, h("div",{class:"empty"}, h("h2",null,"لا توجد مشاريع"), h("p",null, query ? "لا توجد نتائج لهذا البحث." : "جرّب فلتراً آخر."),
       query ? h("button",{class:"btn",type:"button",onclick:()=>{query="";render();}},"مسح البحث") : null)];
@@ -801,7 +801,7 @@
   function viewClients(){
     if (!jobs.length) return [emptyFirst()];
     const list = clientsList().filter(c => !query || (c.name+" "+c.phone).toLowerCase().includes(query.toLowerCase()));
-    const tb = h("div",{class:"toolbar"}, searchBox("ابحث باسم العميل أو رقمه…"));
+    const tb = h("div",{class:"jtools"}, h("div",{class:"jbar"}, jobsTabs(), searchBox("ابحث باسم العميل أو رقمه")));
     if (!list.length) return [tb, h("div",{class:"empty"}, h("h2",null,"لا يوجد عميل بهذا الاسم"))];
     return [tb, h("div",{class:"cgrid"}, ...list.map(c => {
       const owes = Object.values(c.rem).some(v=>v>0);
