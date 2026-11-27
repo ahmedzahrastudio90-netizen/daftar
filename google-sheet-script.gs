@@ -43,8 +43,9 @@ function doPost(e) {
     }
     const jobs = ids.map((id) => JSON.parse(map[id].json));
     if (changed) {
-      writeViews_(ss, jobs.filter((j) => !j.deleted), req.currency);
-      try { syncCalendar_(jobs, Number(req.remindDays) || 3); } catch (err) { console.warn(err); }
+      writeViews_(ss, jobs.filter((j) => !j.deleted && !j.kind), req.currency);
+      writeExpenses_(ss, jobs.filter((j) => !j.deleted && j.kind === "expense"), req.currency);
+      try { syncCalendar_(jobs.filter((j) => !j.kind), Number(req.remindDays) || 3); } catch (err) { console.warn(err); }
     }
     return out({ ok: true, jobs: jobs });
   } finally {
@@ -101,31 +102,48 @@ function writeViews_(ss, jobs, defCur) {
 function syncCalendar_(jobs, days) {
   const cal = CalendarApp.getCalendarsByName(CAL_NAME)[0] || CalendarApp.createCalendar(CAL_NAME, { color: CalendarApp.Color.CYAN });
   const calSh = sheet_(SpreadsheetApp.getActiveSpreadsheet(), "_cal", true);
-  const known = {}; // jobId -> {ev, key}
+  const known = {}; // eventKey -> {ev, key}
   if (calSh.getLastRow() > 1) calSh.getRange(2, 1, calSh.getLastRow() - 1, 3).getValues().forEach((r) => { if (r[0]) known[r[0]] = { ev: r[1], key: r[2] }; });
   const tz = Session.getScriptTimeZone();
-  const minutes = [];
-  for (let d = 0; d <= Math.min(days, 4); d++) minutes.push(d * 1440);
+  const dayMins = [];
+  for (let d = 0; d <= Math.min(days, 4); d++) dayMins.push(d * 1440);
 
+  // every reminder we want: deliveries (each unfinished phase + final) at 10:00, meetings at their time
+  const wanted = {};
   jobs.forEach((j) => {
-    const open = !j.deleted && j.due && j.status !== "done" && j.status !== "cancel";
-    const prev = known[j.id];
-    const key = open ? [j.due, j.title, j.client, rem_(j), days].join("|") : "";
-    if (prev && prev.key === key) return;
-    if (prev) { try { const ev = cal.getEventById(prev.ev); if (ev) ev.deleteEvent(); } catch (err) {} delete known[j.id]; }
-    if (!open) return;
-    const start = Utilities.parseDate(j.due + " " + REMIND_HOUR + ":00", tz, "yyyy-MM-dd H:mm");
-    const end = new Date(start.getTime() + 30 * 60000);
-    const rem = rem_(j);
-    const ev = cal.createEvent("تسليم: " + (j.title || "") + (j.client ? " — " + j.client : ""), start, end, {
-      description: (j.phone ? "رقم العميل: " + j.phone + "\n" : "") + (rem ? "المتبقي: " + rem + " " + (CUR[j.currency] || "") : "مدفوع بالكامل"),
-    });
+    if (j.deleted) return;
+    const open = j.due && j.status !== "done" && j.status !== "cancel";
+    const who = j.client ? " — " + j.client : "";
+    const desc = (j.phone ? "رقم العميل: " + j.phone + "\n" : "") + (rem_(j) ? "المتبقي: " + rem_(j) + " " + (CUR[j.currency] || "") : "مدفوع بالكامل");
+    if (open) {
+      (j.phases || []).forEach((p) => { if (!p.done && p.due && p.due !== j.due) wanted[j.id + "|p|" + p.id] = { title: "تسليم مرحلة: " + (p.title || "") + " (" + (j.title || "") + ")" + who, date: p.due, time: REMIND_HOUR + ":00", mins: dayMins, desc: desc }; });
+      wanted[j.id] = { title: "تسليم: " + (j.title || "") + who, date: j.due, time: REMIND_HOUR + ":00", mins: dayMins, desc: desc };
+    }
+    (j.meetings || []).forEach((m) => { if (m.date && !m.done) wanted[j.id + "|m|" + m.id] = { title: (m.title || "اجتماع") + who, date: m.date, time: m.time || "10:00", mins: [60, 15], desc: j.phone ? "رقم العميل: " + j.phone : "", dur: 60 }; });
+  });
+
+  Object.keys(known).forEach((k) => {
+    const w = wanted[k], key = w ? [w.title, w.date, w.time, w.desc, w.mins.join(",")].join("|") : "";
+    if (w && known[k].key === key) { delete wanted[k]; return; }
+    try { const ev = cal.getEventById(known[k].ev); if (ev) ev.deleteEvent(); } catch (err) {}
+    delete known[k];
+  });
+  Object.keys(wanted).forEach((k) => {
+    const w = wanted[k];
+    const start = Utilities.parseDate(w.date + " " + w.time, tz, "yyyy-MM-dd H:mm");
+    const ev = cal.createEvent(w.title, start, new Date(start.getTime() + (w.dur || 30) * 60000), { description: w.desc });
     ev.removeAllReminders();
-    minutes.forEach((m) => ev.addPopupReminder(m));
-    known[j.id] = { ev: ev.getId(), key: key };
+    w.mins.forEach((m) => ev.addPopupReminder(m));
+    known[k] = { ev: ev.getId(), key: [w.title, w.date, w.time, w.desc, w.mins.join(",")].join("|") };
   });
   const ids = Object.keys(known);
   calSh.clearContents();
   calSh.getRange(1, 1, 1, 3).setValues([["id", "event", "key"]]);
   if (ids.length) calSh.getRange(2, 1, ids.length, 3).setValues(ids.map((id) => [id, known[id].ev, known[id].key]));
+}
+
+function writeExpenses_(ss, list, defCur) {
+  list.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  fill_(sheet_(ss, "المصاريف"), ["التاريخ", "الوصف", "المبلغ", "العملة", "متكرر شهرياً", "توقف من"],
+    list.map((e) => [e.date || "", e.note || "", num_(e.amount), CUR[e.currency] || CUR[defCur] || "", e.recurring ? "نعم" : "", e.stopped || ""]));
 }

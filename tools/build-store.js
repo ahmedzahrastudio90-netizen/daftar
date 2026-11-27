@@ -20,7 +20,7 @@ const DEMO = {
   d4: { id: "d4", client: "كافيه بُن", phone: "01198765432", title: "منيو وتغليف", types: ["مطبوعات", "تغليف"], type: "مطبوعات + تغليف", status: "work", price: 3500, currency: "EGP", payments: [{ amount: 1000, date: iso(-3), note: "فودافون كاش" }], start: iso(-3), due: iso(6), finish: iso(5), updatedAt: t },
   d5: { id: "d5", client: "مطعم الريحان", phone: "01012345678", title: "منيو", types: ["مطبوعات"], type: "مطبوعات", status: "done", price: 1500, currency: "EGP", payments: [{ amount: 1500, date: iso(-40), note: "نقدي" }], start: iso(-48), due: iso(-40), delivered: iso(-40), updatedAt: t },
 };
-const SETTINGS = { currency: "EGP", myName: "Ahmed", rates: { base: "EGP", at: t, map: { USD: 50.1, SAR: 13.35, AED: 13.64, KWD: 163.2, EUR: 54.2 } } };
+const SETTINGS = { currency: "EGP", myName: "Ahmed", splash: "off", rates: { base: "EGP", at: t, map: { USD: 50.1, SAR: 13.35, AED: 13.64, KWD: 163.2, EUR: 54.2 } } };
 
 (async () => {
   await new Promise((r) => server.listen(0, r));
@@ -31,7 +31,9 @@ const SETTINGS = { currency: "EGP", myName: "Ahmed", rates: { base: "EGP", at: t
   // square = full-bleed (Play Store and Android "maskable" icons get their corners from the system)
   const shotSvg = async (file, size, square) => {
     await page.setViewportSize({ width: size, height: size });
-    const inner = (square ? svg.replace(/rx="112"/, 'rx="0"') : svg).replace("<svg ", '<svg width="100%" height="100%" ');
+    let src = square ? svg.replace(/rx="112"/, 'rx="0"') : svg;
+    if (file.includes("maskable")) src = src.replace('<g fill="#F3F6FA">', '<g fill="#F3F6FA" transform="translate(256 256) scale(0.78) translate(-256 -256)">');
+    const inner = src.replace("<svg ", '<svg width="100%" height="100%" ');
     await page.setContent(`<body style="margin:0;background:transparent"><div style="width:${size}px;height:${size}px">${inner}</div></body>`);
     await page.screenshot({ path: path.join(ROOT, file), omitBackground: !square });
   };
@@ -52,7 +54,7 @@ const SETTINGS = { currency: "EGP", myName: "Ahmed", rates: { base: "EGP", at: t
   // phone screenshots 1080x2160
   const ctx = await b.newContext({ viewport: { width: 360, height: 720 }, deviceScaleFactor: 3, colorScheme: "light", serviceWorkers: "block" });
   const p = await ctx.newPage();
-  await p.goto(base); await p.evaluate(([j, s]) => { localStorage.setItem("ledger.jobs", JSON.stringify(j)); localStorage.setItem("ledger.settings", JSON.stringify(s)); }, [DEMO, SETTINGS]);
+  await p.goto(base); await p.evaluate(([j, s]) => { localStorage.setItem("ledger.jobs", JSON.stringify(j)); localStorage.setItem("ledger.settings", JSON.stringify(s)); localStorage.setItem("ledger.hideInstall", "true"); }, [DEMO, SETTINGS]);
   await p.goto(base + "#home"); await p.reload(); await p.waitForTimeout(800);
   await p.screenshot({ path: path.join(ROOT, "store/screenshot-1.png") });
   await p.locator(".tabbar button").nth(1).click(); await p.waitForTimeout(400);

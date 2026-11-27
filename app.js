@@ -11,8 +11,7 @@
   const CUR = {EGP:"ج.م", USD:"$", SAR:"ر.س", AED:"د.إ", KWD:"د.ك", EUR:"€"};
   const CUR_NAME = {EGP:"جنيه مصري", USD:"دولار", SAR:"ريال سعودي", AED:"درهم إماراتي", KWD:"دينار كويتي", EUR:"يورو"};
   const TYPES = ["لوجو","هوية بصرية","سوشيال ميديا","مطبوعات","تغليف","UI / UX","موشن","إليستريشن","أخرى"];
-  const DURS = [[3,"3 أيام"],[5,"5 أيام"],[7,"أسبوع"],[14,"أسبوعين"],[30,"شهر"]];
-  const VIEWS = [["home","الرئيسية","i-home"],["jobs","المشاريع","i-jobs"],["clients","العملاء","i-clients"],["settings","الإعدادات","i-gear"]];
+  const VIEWS = [["home","الرئيسية","i-home"],["jobs","المشاريع","i-jobs"],["money","الحسابات","i-pay"],["settings","الإعدادات","i-gear"]];
   const FILTERS = [["active","الجارية"],["late","متأخر"],["unpaid","مستحقات"],["done","مُسلَّمة"],["all","الكل"]];
   const MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
   const DAYS = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
@@ -21,15 +20,20 @@
   const LS = {get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
               set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
   let all = LS.get("ledger.jobs", {});           // id -> job (incl. deleted tombstones)
-  const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:""}, LS.get("ledger.settings", {}));
+  const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:"",
+    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:1}, LS.get("ledger.settings", {}));
+  if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
-  let jobs = [];
-  const refreshJobs = () => { jobs = Object.values(all).filter(j => j && !j.deleted); };
+  let jobs = [], expenses = [];
+  const refreshJobs = () => {
+    const v = Object.values(all).filter(j => j && !j.deleted);
+    jobs = v.filter(j => !j.kind); expenses = v.filter(j => j.kind === "expense");
+  };
   refreshJobs();
 
   let view = VIEWS.some(v=>v[0]===location.hash.slice(1)) ? location.hash.slice(1) : "home";
-  let filter = LS.get("ledger.filter","active"), query = "";
+  let filter = LS.get("ledger.filter","active"), query = "", jobsTab = "projects";
 
   // ---------- helpers ----------
   function h(tag, attrs, ...kids){
@@ -46,7 +50,8 @@
   const SVGNS = "http://www.w3.org/2000/svg";
   function icon(id, cls){ const s = document.createElementNS(SVGNS,"svg"); if (cls) s.setAttribute("class",cls); s.setAttribute("aria-hidden","true"); const u = document.createElementNS(SVGNS,"use"); u.setAttribute("href","#"+id); s.append(u); return s; }
   const n = (v) => { const x = Number(v); return isFinite(x) ? x : 0; };
-  const fmt = (v) => n(v).toLocaleString("en-US",{maximumFractionDigits:2});
+  const fmt = (v) => settings.hideMoney ? "••••" : n(v).toLocaleString("en-US",{maximumFractionDigits:2});
+  const rawFmt = (v) => n(v).toLocaleString("en-US",{maximumFractionDigits:2});
   const curOf = (j) => CUR[j && j.currency] ? j.currency : settings.currency;
   const money = (v, cur) => fmt(v) + " " + CUR[cur || settings.currency];
   const iso = (d) => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -62,7 +67,16 @@
   const paidOf = (j) => paysOf(j).reduce((a,p)=>a+n(p.amount),0);
   const remOf = (j) => j.status === "cancel" ? 0 : Math.max(0, n(j.price) - paidOf(j));
   const isOpen = (j) => j.status !== "done" && j.status !== "cancel";
-  const isLate = (j) => isOpen(j) && !!j.due && daysUntil(j.due) < 0;
+  // next thing to deliver: first unfinished phase, else the final delivery
+  const phasesOf = (j) => Array.isArray(j.phases) ? j.phases : [];
+  function nextDue(j){
+    const p = phasesOf(j).find(x => !x.done && x.due);
+    return p ? {date:p.due, label:p.title || "مرحلة"} : {date:j.due || "", label:""};
+  }
+  const isLate = (j) => { const d = nextDue(j).date; return isOpen(j) && !!d && daysUntil(d) < 0; };
+  const meetingsOf = (j) => Array.isArray(j.meetings) ? j.meetings : [];
+  function fmtTime(t){ if (!/^\d{1,2}:\d{2}$/.test(t||"")) return ""; let [hh,mm] = t.split(":").map(Number); const pm = hh >= 12; hh = hh % 12 || 12; return hh + ":" + String(mm).padStart(2,"0") + (pm ? " م" : " ص"); }
+  const relDay = (s) => { const k = daysUntil(s); return k === 0 ? "اليوم" : k === 1 ? "غداً" : k === -1 ? "أمس" : dlong(s); };
   const dayWord = (k) => k === 1 ? "يوم" : k === 2 ? "يومين" : (k <= 10 ? k+" أيام" : k+" يوم");
   const typesOf = (j) => Array.isArray(j.types) && j.types.length ? j.types : (j.type ? String(j.type).split(/\s*\+\s*/) : []);
   const typeText = (j) => typesOf(j).join(" + ");
@@ -72,7 +86,16 @@
 
   // ---------- exchange rates ----------
   // A payment in another currency keeps the rate of its day: rate = units of the main currency for 1 unit.
-  const rateNow = (cur) => cur === settings.currency ? 1 : (settings.rates && settings.rates.base === settings.currency && settings.rates.map[cur]) || null;
+  function lastRate(cur){ // the most recent rate you used for this currency
+    let best = null, bd = "";
+    for (const j of Object.values(all)){
+      if (!j || j.deleted) continue;
+      const list = j.kind === "expense" ? (j.currency === cur ? [j] : []) : (curOf(j) === cur ? paysOf(j) : []);
+      for (const p of list) if (p.rate && p.rateBase === settings.currency && (p.date||"") >= bd){ best = n(p.rate); bd = p.date || ""; }
+    }
+    return best;
+  }
+  const rateNow = (cur) => cur === settings.currency ? 1 : (settings.rates && settings.rates.base === settings.currency && settings.rates.map[cur]) || lastRate(cur);
   const payBase = (p, cur) => cur === settings.currency ? n(p.amount)
     : (p.rate && p.rateBase === settings.currency ? n(p.amount) * n(p.rate) : (rateNow(cur) ? n(p.amount) * rateNow(cur) : null));
   const stampPay = (p, cur) => cur === settings.currency ? p : {...p, rate: p.rate ? n(p.rate) : rateNow(cur), rateBase: settings.currency};
@@ -124,8 +147,9 @@
   function countdown(j){
     if (j.status === "done") return {t:"تم التسليم" + (j.delivered ? " " + dshort(j.delivered) : ""), c:"c-done"};
     if (j.status === "cancel") return {t:"ملغي", c:"c-ok"};
-    if (!j.due) return {t:"بدون موعد", c:"c-ok"};
-    const k = daysUntil(j.due);
+    const nd = nextDue(j);
+    if (!nd.date) return {t:"بدون موعد", c:"c-ok"};
+    const k = daysUntil(nd.date);
     if (k < 0) return {t:"متأخر " + dayWord(-k), c:"c-late"};
     if (k === 0) return {t:"التسليم اليوم", c:"c-soon"};
     if (k === 1) return {t:"التسليم غداً", c:"c-soon"};
@@ -150,7 +174,9 @@
   document.addEventListener("input", e => { if (e.target.type === "date") syncDates(e.target.parentElement.parentElement); });
   document.addEventListener("change", e => { if (e.target.type === "date") syncDates(e.target.parentElement.parentElement); });
 
-  function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
+  // open windows sit on the browser's top layer, so messages are moved into the top-most one to stay visible
+  const topHost = () => [...document.querySelectorAll("dialog[open]")].pop() || document.body;
+  function toast(msg){ const t=$("toast"); topHost().appendChild(t); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
 
   // ---------- data writes ----------
   const store = {
@@ -205,6 +231,28 @@
     for (const id of ["syncSide","syncTop"]){ const el = $(id); el.className = "sync " + s.c; el.title = s.t; el.lastElementChild.textContent = s.t; }
   }
 
+  // ---------- dialogs: phone "back" closes the open window instead of leaving the app ----------
+  function openDlg(d){
+    if (d.open) return;
+    d.showModal();
+    try { history.pushState({dlg: d.id}, ""); } catch(e){}
+  }
+  window.addEventListener("popstate", () => {
+    const open = [...document.querySelectorAll("dialog[open]")];
+    if (open.length){ const top = open[open.length - 1]; top._byBack = true; top.close(); }
+  });
+  for (const d of document.querySelectorAll("dialog")) d.addEventListener("close", () => {
+    if (!d._byBack && history.state && history.state.dlg === d.id){ try { history.replaceState(null, ""); } catch(e){} }
+    d._byBack = false;
+  });
+
+  // ---------- hide amounts ----------
+  function renderEye(){
+    const b = $("eyeBtn"); b.replaceChildren(icon(settings.hideMoney ? "i-eyeoff" : "i-eye"));
+    b.setAttribute("aria-label", settings.hideMoney ? "إظهار المبالغ" : "إخفاء المبالغ"); b.title = b.getAttribute("aria-label");
+  }
+  $("eyeBtn").addEventListener("click", () => { settings.hideMoney = !settings.hideMoney; saveSettings(); render(); });
+
   // ---------- navigation ----------
   function go(v){ view = v; try{ history.replaceState(null,"","#"+v); }catch(e){} render(); window.scrollTo(0,0); }
   window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (VIEWS.some(x=>x[0]===v)) { view = v; render(); } });
@@ -223,7 +271,11 @@
   function render(){
     renderNav(); renderSync(); clearTimeout(render._r); render._r = setTimeout(reminders, 400);
     $("pageTitle").textContent = VIEWS.find(v=>v[0]===view)[1];
-    const nodes = view === "home" ? viewHome() : view === "jobs" ? viewJobs() : view === "clients" ? viewClients() : viewSettings();
+    renderEye();
+    const nodes = view === "home" ? viewHome() : view === "jobs" ? (jobsTab === "clients" ? viewClients() : viewJobs()) : view === "money" ? viewMoney() : viewSettings();
+    if (view === "jobs" && (jobs.length || jobsTab === "clients")) nodes.unshift(h("div",{class:"seg",role:"tablist",style:"align-self:flex-start"},
+      h("button",{type:"button","aria-pressed":String(jobsTab==="projects"),onclick:()=>{jobsTab="projects";render();}},"المشاريع"),
+      h("button",{type:"button","aria-pressed":String(jobsTab==="clients"),onclick:()=>{jobsTab="clients";render();}},"العملاء")));
     const active = document.activeElement && document.activeElement.id === "search";
     $("content").replaceChildren(...nodes.filter(Boolean));
     if (active){ const s = $("search"); if (s){ s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
@@ -249,19 +301,35 @@
 
   // ---------- home ----------
   // ---------- reminders ----------
-  function dueSoon(){ return jobs.filter(j => isOpen(j) && j.due && daysUntil(j.due) <= settings.remindDays).sort((a,b)=>a.due.localeCompare(b.due)); }
-  const reminderText = (j) => { const k = daysUntil(j.due); return (k < 0 ? "متأخر " + dayWord(-k) : k === 0 ? "التسليم اليوم" : k === 1 ? "التسليم غداً" : "متبقٍ " + dayWord(k)) + ": " + (j.title||"") + (j.client ? " — " + j.client : ""); };
+  function dueSoon(){ return jobs.filter(j => { const d = nextDue(j).date; return isOpen(j) && d && daysUntil(d) <= settings.remindDays; }).sort((a,b)=>nextDue(a).date.localeCompare(nextDue(b).date)); }
+  const reminderText = (j) => { const nd = nextDue(j), k = daysUntil(nd.date); return (k < 0 ? "متأخر " + dayWord(-k) : k === 0 ? "التسليم اليوم" : k === 1 ? "التسليم غداً" : "متبقٍ " + dayWord(k)) + ": " + (j.title||"") + (nd.label ? " (" + nd.label + ")" : "") + (j.client ? " — " + j.client : ""); };
+  const todayMeetings = () => jobs.flatMap(j => meetingsOf(j).filter(m => !m.done && m.date === todayStr()).map(m => ({...m, client:j.client}))).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+  const meetTimers = [];
+  function scheduleMeetingAlerts(){ // while the app is open: alert 30 minutes before
+    meetTimers.splice(0).forEach(clearTimeout);
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    for (const m of todayMeetings()){
+      if (!m.time) continue;
+      const [hh,mm] = m.time.split(":").map(Number), at = new Date(); at.setHours(hh, mm - 30, 0, 0);
+      const ms = at - Date.now();
+      if (ms > 0 && ms < 12*3600e3) meetTimers.push(setTimeout(async () => {
+        const opts = {body:(m.title||"اجتماع") + " الساعة " + fmtTime(m.time), tag:"meet-"+m.id, icon:"icons/icon-192.png", dir:"rtl", lang:"ar"};
+        try { const reg = await navigator.serviceWorker?.getRegistration(); reg ? reg.showNotification("اجتماع بعد نصف ساعة", opts) : new Notification("اجتماع بعد نصف ساعة", opts); } catch(e){}
+      }, ms));
+    }
+  }
   async function reminders(){
-    const list = dueSoon();
-    try { if ("setAppBadge" in navigator) list.length ? navigator.setAppBadge(list.length) : navigator.clearAppBadge(); } catch(e){}
+    const list = dueSoon(), meets = todayMeetings();
+    try { if ("setAppBadge" in navigator) (list.length + meets.length) ? navigator.setAppBadge(list.length + meets.length) : navigator.clearAppBadge(); } catch(e){}
+    scheduleMeetingAlerts();
     // snapshot for the background check in sw.js
-    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&j.due).map(j=>({title:j.title, client:j.client, due:j.due}))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
+    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>({title:j.title + (nextDue(j).label ? " (" + nextDue(j).label + ")" : ""), client:j.client, due:nextDue(j).date}))))); await c.put("meetings", new Response(JSON.stringify(jobs.flatMap(j=>meetingsOf(j).filter(m=>!m.done).map(m=>({title:m.title, client:j.client, date:m.date, time:m.time})))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
     // once a day, when the app opens
-    if (list.length && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
+    if ((list.length || meets.length) && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
       settings.lastNotify = todayStr(); saveSettings();
-      try { const reg = await navigator.serviceWorker?.getRegistration(); const body = list.slice(0,4).map(reminderText).join("\n");
+      try { const reg = await navigator.serviceWorker?.getRegistration(); const body = meets.map(m => "اجتماع " + fmtTime(m.time) + ": " + (m.title||"") ).concat(list.slice(0,4).map(reminderText)).join("\n");
         const opts = {body, tag:"due-today", icon:"icons/icon-192.png", badge:"icons/icon-192.png", dir:"rtl", lang:"ar"};
-        if (reg) reg.showNotification("مواعيد تسليم قريبة", opts); else new Notification("مواعيد تسليم قريبة", opts); } catch(e){}
+        const ttl = meets.length ? "مواعيد اليوم" : "مواعيد تسليم قريبة"; if (reg) reg.showNotification(ttl, opts); else new Notification(ttl, opts); } catch(e){}
     }
   }
   async function enableNotify(){
@@ -274,75 +342,198 @@
     } else toast("الإشعارات معطّلة من إعدادات المتصفح");
     render();
   }
-  function transitStrip(){
-    const items = []; for (const j of jobs) paysOf(j).forEach(p => { if (!isRecv(p)) items.push(money(p.amount, curOf(j)) + " من " + (j.client||"—")); });
-    if (!items.length) return null;
-    return h("div",{class:"exbar"}, h("span",null, h("b",null,"مدفوعات قيد التحويل: "), items.slice(0,3).join(" · ") + (items.length>3 ? " · و" + (items.length-3) + " أخرى" : "") + ". عند وصولها لحسابك افتح المشروع واضغط «تم الاستلام»."));
+  // ---------- money helpers ----------
+  function expBase(e){ const cur = CUR[e.currency] ? e.currency : settings.currency; return cur === settings.currency ? n(e.amount) : (e.rate && e.rateBase === settings.currency ? n(e.amount) * n(e.rate) : (rateNow(cur) ? n(e.amount) * rateNow(cur) : null)); }
+  function expensesIn(ym){ // one month "YYYY-MM": one-off of that month + monthly ones running then
+    return expenses.filter(e => {
+      const m = (e.date||"").slice(0,7); if (!m) return false;
+      return e.recurring ? (m <= ym && (!e.stopped || ym < e.stopped)) : m === ym;
+    });
   }
-  function remindStrip(){
-    const list = dueSoon(); if (!list.length) return null;
-    return h("div",{class:"exbar",style:"background:var(--bad-soft);color:var(--bad)"},
-      h("span",null, h("b",null,"تذكير: "), list.slice(0,3).map(reminderText).join(" · ") + (list.length > 3 ? " · و" + (list.length-3) + " أخرى" : "")),
-      h("button",{class:"btn sm",type:"button",onclick:()=>{filter="active";go("jobs");}},"عرض"));
-  }
+  function expTotal(ym){ return totals(expensesIn(ym).map(e => ({amount:n(e.amount), cur: CUR[e.currency] ? e.currency : settings.currency, base: expBase(e)}))); }
+  function monthsOfYear(y){ const now = new Date(), last = String(now.getFullYear()) === y ? now.getMonth() : 11; const out = []; for (let i = 0; i <= last; i++) out.push(y + "-" + String(i+1).padStart(2,"0")); return out; }
+  function yearNet(y){ let inc = 0, exp = 0; for (const ym of monthsOfYear(y)){ inc += income(ym).base; exp += expTotal(ym).base; } return {inc, exp, net: inc - exp, months: monthsOfYear(y).length}; }
+  const dueTotals = () => totals(jobs.map(j => { const cur = curOf(j), r = remOf(j); return {amount:r, cur, base: rateNow(cur) ? r * rateNow(cur) : null}; }));
+  const big = (v) => [fmt(Math.round(v)), h("small",null,CUR[settings.currency])];
 
-  function viewHome(){
-    if (!jobs.length) return [installCard(), waCard(), emptyFirst()];
+  // ---------- home ----------
+  function upcomingItems(){
+    const items = [];
+    for (const j of jobs){
+      if (isOpen(j)){ const nd = nextDue(j); if (nd.date) items.push({kind:"due", date:nd.date, j, label:nd.label}); else items.push({kind:"due", date:"9999-12-31", j, label:""}); }
+      for (const m of meetingsOf(j)) if (!m.done && m.date && daysUntil(m.date) >= 0 && daysUntil(m.date) <= 14) items.push({kind:"meet", date:m.date, time:m.time||"", j, m});
+    }
+    return items.sort((x,y) => (x.date + (x.time||"99")).localeCompare(y.date + (y.time||"99")));
+  }
+  function todayPanel(){
+    const items = upcomingItems().slice(0, 6);
+    const transit = jobs.reduce((a,j)=>a+paysOf(j).filter(p=>!isRecv(p)).length, 0);
+    const rows = items.map(it => {
+      const j = it.j;
+      if (it.kind === "meet") return h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+        h("div",{class:"timebox"}, h("b",{class:"num"}, fmtTime(it.time).split(" ")[0] || "—"), h("span",null, it.time ? fmtTime(it.time).split(" ")[1] : "")),
+        h("div",{class:"grow"}, h("div",{class:"t"}, it.m.title || "اجتماع"), h("div",{class:"s"}, relDay(it.date) + " · " + (j.client||""))),
+        h("span",{class:"cd " + (daysUntil(it.date) === 0 ? "c-soon" : "c-ok")}, daysUntil(it.date) === 0 ? "اليوم" : "اجتماع"));
+      const d = parseD(it.date === "9999-12-31" ? "" : it.date);
+      return h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+        h("div",{class:"datebox"+(isLate(j)?" late":"")}, h("b",{class:"num"}, d?d.getDate():"—"), h("span",null, d?MONTHS[d.getMonth()]:"بدون")),
+        h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم", it.label ? h("span",{class:"tag"}, it.label) : null), h("div",{class:"s"}, j.client||"—")),
+        cdChip(j));
+    });
+    if (transit) rows.push(h("li",{tabindex:"0",onclick:()=>go("money")},
+      h("div",{class:"timebox"}, h("b",null,"⏳"), h("span",null,"")),
+      h("div",{class:"grow"}, h("div",{class:"t"}, "مدفوعات قيد التحويل"), h("div",{class:"s"}, transit + " دفعة لم تصل لحسابك بعد")),
+      h("span",{class:"cd c-soon"},"تابع")));
+    return h("section",{class:"panel today"},
+      h("div",{class:"panel-h"}, h("h2",null,"القادم"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="active";jobsTab="projects";go("jobs")}},"كل المشاريع")),
+      rows.length ? h("ul",{class:"plist"}, ...rows) : h("div",{class:"pempty"},"لا يوجد شيء عاجل. يوم موفق 🌿"));
+  }
+  function moneyCards(){
     const now = new Date(), ym = todayStr().slice(0,7), y = String(now.getFullYear());
-    const prev = new Date(now.getFullYear(), now.getMonth()-1, 1), prevYm = iso(prev).slice(0,7);
-    const mIn = income(ym), yIn = income(y), pIn = income(prevYm);
-    const transit = totals(jobs.flatMap(j => { const cur = curOf(j); return paysOf(j).filter(p => !isRecv(p)).map(p => ({amount:n(p.amount), cur, base:payBase(p, cur)})); }));
-    const transitN = jobs.reduce((a,j)=>a+paysOf(j).filter(p=>!isRecv(p)).length, 0);
-    const due = totals(jobs.map(j => { const cur = curOf(j), r = remOf(j); return {amount:r, cur, base: rateNow(cur) ? r * rateNow(cur) : null}; }));
-    const open = jobs.filter(isOpen), late = jobs.filter(isLate);
+    const mIn = income(ym), mEx = expTotal(ym), yr = yearNet(y), due = dueTotals();
+    const owing = clientsList().filter(c=>Object.values(c.rem).some(v=>v>0)).length;
+    const kpi = (cls, lbl, val, foot) => h("div",{class:"kpi "+cls,tabindex:"0",role:"button",onclick:()=>go("money"),onkeydown:e=>{if(e.key==="Enter")go("money")}},
+      h("div",{class:"lbl"}, lbl), h("div",{class:"val num"}, val), h("div",{class:"foot"}, foot));
+    return h("section",{class:"kpis","aria-label":"الحسابات"},
+      kpi("", "صافي " + MONTHS[now.getMonth()], big(mIn.base - mEx.base), "دخل " + fmt(Math.round(mIn.base)) + " · مصاريف " + fmt(Math.round(mEx.base))),
+      kpi("owed", "مستحقات لدى العملاء", big(due.base), owing ? "لدى " + owing + " عميل" : "لا توجد مستحقات"),
+      kpi("", "صافي " + y, big(yr.net), "متوسط الشهر " + fmt(Math.round(yr.net / Math.max(1, yr.months)))));
+  }
+  function viewHome(){
+    if (!jobs.length && !expenses.length) return [installCard(), waCard(), emptyFirst()];
+    return [installCard(), todayPanel(), moneyCards(), waCard()];
+  }
+
+  // ---------- accounts ----------
+  function viewMoney(){
+    const now = new Date(), ym = todayStr().slice(0,7), y = String(now.getFullYear());
+    const mIn = income(ym), mEx = expTotal(ym);
     const owing = clientsList().filter(c=>Object.values(c.rem).some(v=>v>0));
-
-    const kpi = (cls, dot, lbl, val, foot) => h("div",{class:"kpi "+cls},
-      h("div",{class:"lbl"}, h("i",{style:"background:"+dot}), lbl), h("div",{class:"val num"}, val), h("div",{class:"foot"}, foot));
-    const upcoming = open.slice().sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999")).slice(0,6);
-
-    // months of this year
-    const months = [];
-    for (let i = 0; i <= now.getMonth(); i++){ const k = y + "-" + String(i+1).padStart(2,"0"); const m = income(k); if (i === now.getMonth() || Object.keys(m.by).length) months.push([i, m]); }
-    const maxMain = Math.max(1, ...months.map(([,m]) => m.base));
-
+    const transit = []; for (const j of jobs) paysOf(j).forEach(p => { if (!isRecv(p)) transit.push({j, p}); });
+    const exList = expensesIn(ym).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    const months = monthsOfYear(y).map(k => ({k, net: income(k).base - expTotal(k).base, inc: income(k).base})).filter((m,i,arr) => m.inc || expTotal(m.k).base || i === arr.length-1);
+    const maxV = Math.max(1, ...months.map(m => Math.abs(m.net)));
     return [
-      installCard(),
-      remindStrip(),
-      transitStrip(),
-      waCard(),
-      h("section",{class:"kpis","aria-label":"الملخص"},
-        kpi("", "var(--ok)", "الدخل في " + MONTHS[now.getMonth()], totalView(mIn), transitN ? "قيد التحويل: " + money(Math.round(transit.base)) + (Object.keys(transit.missing).length ? " + " + moneyMap(transit.missing) : "") : "الشهر السابق: " + money(Math.round(pIn.base))),
-        kpi("", "var(--cyan)", "الدخل في " + y, totalView(yIn), "المتوسط الشهري: " + money(Math.round(yIn.base/(now.getMonth()+1)))),
-        kpi("owed", "var(--magenta)", "مستحقات لدى العملاء", totalView(due, due.foreign), owing.length ? "لدى " + owing.length + " عميل" : "لا توجد مستحقات"),
-        kpi("late", "var(--bad)", "مشاريع جارية", h("span",{class:late.length?"":"",style:late.length?"color:var(--bad)":""}, open.length), late.length ? late.length + " متأخر عن موعده" : "جميعها في موعدها")
-      ),
-      h("section",{class:"panels"},
-        h("div",{class:"panel"},
-          h("div",{class:"panel-h"}, h("h2",null,"التسليمات القادمة"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="active";go("jobs")}},"الكل")),
-          upcoming.length ? h("ul",{class:"plist"}, ...upcoming.map(j => {
-            const d = parseD(j.due);
-            return h("li",{tabindex:"0",onclick:()=>openSheet(j.id),onkeydown:e=>{if(e.key==="Enter")openSheet(j.id)}},
-              h("div",{class:"datebox"+(isLate(j)?" late":"")}, h("b",{class:"num"}, d?d.getDate():"—"), h("span",null, d?MONTHS[d.getMonth()]:"بدون")),
-              h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم"), h("div",{class:"s"}, j.client||"—")),
-              cdChip(j));
-          })) : h("div",{class:"pempty"},"لا توجد مشاريع جارية حالياً.")),
-        h("div",{class:"panel"},
-          h("div",{class:"panel-h"}, h("h2",null,"مستحقات لدى العملاء"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="unpaid";go("jobs")}},"التفاصيل")),
-          owing.length ? h("ul",{class:"plist"}, ...owing.slice(0,6).map(c =>
-            h("li",{tabindex:"0",onclick:()=>showClient(c.name),onkeydown:e=>{if(e.key==="Enter")showClient(c.name)}},
-              h("span",{class:"avatar"}, initials(c.name)),
-              h("div",{class:"grow"}, h("div",{class:"t"}, c.name), h("div",{class:"s"}, c.phone || " ")),
-              h("span",{class:"amt num"}, moneyMap(c.rem))))) : h("div",{class:"pempty"},"لا توجد مستحقات متأخرة."))
-      ),
       h("section",{class:"panel"},
-        h("div",{class:"panel-h"}, h("h2",null,"الدخل الشهري · " + y), h("b",{class:"num",style:"color:var(--ok)"}, money(Math.round(yIn.base)))),
-        h("ul",{class:"months"}, ...months.reverse().map(([i,m]) => h("li",null,
+        h("div",{class:"panel-h"}, h("h2",null, MONTHS[now.getMonth()] + " " + y), h("button",{class:"btn primary sm",type:"button",onclick:()=>openExp(null)}, icon("i-plus"), "مصروف")),
+        h("div",{class:"sumgrid"},
+          h("div",null, h("span",null,"الدخل"), h("b",{class:"num",style:"color:var(--ok)"}, fmt(Math.round(mIn.base)))),
+          h("div",null, h("span",null,"المصاريف"), h("b",{class:"num",style:"color:var(--bad)"}, fmt(Math.round(mEx.base)))),
+          h("div",{class:"net"}, h("span",null,"الصافي"), h("b",{class:"num"}, fmt(Math.round(mIn.base - mEx.base)))))),
+      h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"مصاريف الشغل"), h("span",{class:"hint"}, "هذا الشهر")),
+        exList.length ? h("ul",{class:"xlist"}, ...exList.map(e => h("li",{tabindex:"0",onclick:()=>openExp(e.id)},
+          h("div",{class:"grow"}, h("b",null, e.note || "مصروف", e.recurring ? h("span",{class:"tag"},"شهري") : null), h("span",null, e.recurring ? "كل شهر من " + dshort(e.date) : dlong(e.date))),
+          h("span",{class:"amt num",style:"color:var(--bad)"}, money(e.amount, CUR[e.currency] ? e.currency : settings.currency)))))
+          : h("div",{class:"pempty"},"لا توجد مصاريف هذا الشهر.")),
+      transit.length ? h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"قيد التحويل"), h("span",{class:"hint"},"اضغط «تم الاستلام» عند وصولها")),
+        h("ul",{class:"xlist"}, ...transit.map(({j,p}) => h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+          h("div",{class:"grow"}, h("b",null, j.client || "—"), h("span",null, (j.title||"") + " · " + dshort(p.date))),
+          h("span",{class:"amt num"}, money(p.amount, curOf(j))))))) : null,
+      h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"مستحقات لدى العملاء"), h("b",{class:"num",style:"color:var(--owed)"}, money(Math.round(dueTotals().base)))),
+        owing.length ? h("ul",{class:"plist"}, ...owing.slice(0,8).map(c =>
+          h("li",{tabindex:"0",onclick:()=>showClient(c.name),onkeydown:e=>{if(e.key==="Enter")showClient(c.name)}},
+            h("span",{class:"avatar"}, initials(c.name)),
+            h("div",{class:"grow"}, h("div",{class:"t"}, c.name), h("div",{class:"s"}, c.phone || " ")),
+            h("span",{class:"amt num"}, moneyMap(c.rem))))) : h("div",{class:"pempty"},"لا توجد مستحقات.")),
+      zakatPanel(),
+      h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"صافي الدخل · " + y), h("b",{class:"num",style:"color:var(--ok)"}, money(Math.round(yearNet(y).net)))),
+        h("ul",{class:"months"}, ...months.reverse().map(m => { const i = Number(m.k.slice(5)) - 1; return h("li",null,
           h("span",{class:i===now.getMonth()?"now":""}, MONTHS[i]),
-          h("span",{class:"barw"}, h("i",{style:"width:"+(m.base/maxMain*100).toFixed(1)+"%"})),
-          h("b",{class:"num",title:moneyMap(m.by)}, Object.keys(m.by).length ? money(Math.round(m.base)) : "—")))))
+          h("span",{class:"barw"}, h("i",{style:"width:"+(Math.max(0,m.net)/maxV*100).toFixed(1)+"%"})),
+          h("b",{class:"num",style:m.net<0?"color:var(--bad)":""}, money(Math.round(m.net)))); })))
     ];
   }
+
+  // ---------- zakat / sadaqa per finished project ----------
+  const zkWord = () => settings.zakatMode === "sadaqa" ? "صدقة" : "زكاة";
+  function recvBase(j){ const cur = curOf(j); return paysOf(j).filter(isRecv).reduce((a,p)=>a+(payBase(p,cur)||0),0); }
+  function zakatDue(j){
+    if (settings.zakatMode === "off" || j.status !== "done") return 0;
+    return Math.max(0, Math.round(recvBase(j) * n(settings.zakatRate) / 100) - n(j.zakatPaid));
+  }
+  function markZakat(j){
+    const amt = zakatDue(j); if (!amt) return;
+    const nx = bodyOf(j); nx.zakatPaid = n(j.zakatPaid) + amt; nx.zakatLog = [...(Array.isArray(j.zakatLog) ? j.zakatLog : []), {amount:amt, date:todayStr(), mode:settings.zakatMode}];
+    store.save(j.id, nx); toast("تقبّل الله منك");
+  }
+  function zakatPanel(){
+    if (settings.zakatMode === "off") return null;
+    const y = String(new Date().getFullYear());
+    const paidYear = jobs.reduce((a,j) => a + (Array.isArray(j.zakatLog) ? j.zakatLog : []).filter(z => (z.date||"").startsWith(y)).reduce((x,z)=>x+n(z.amount),0), 0);
+    const pend = jobs.filter(j => zakatDue(j) > 0);
+    return h("section",{class:"panel"},
+      h("div",{class:"panel-h"}, h("h2",null, zkWord() + " المشاريع"), h("span",{class:"hint"}, n(settings.zakatRate) + "% من كل مشروع")),
+      h("div",{class:"sumgrid",style:"grid-template-columns:1fr 1fr"},
+        h("div",null, h("span",null,"أخرجت في " + y), h("b",{class:"num",style:"color:var(--ok)"}, money(paidYear))),
+        h("div",null, h("span",null,"لم تُخرج بعد"), h("b",{class:"num"}, money(pend.reduce((a,j)=>a+zakatDue(j),0))))),
+      pend.length ? h("ul",{class:"xlist"}, ...pend.map(j => h("li",null,
+        h("div",{class:"grow",onclick:()=>openSheet(j.id)}, h("b",null, j.title || "مشروع"), h("span",null, j.client || "")),
+        h("span",{class:"amt num"}, money(zakatDue(j))),
+        h("button",{class:"btn sm",type:"button",onclick:()=>markZakat(j)},"تم الإخراج ✓")))) : null,
+      h("details",{class:"more",style:"padding:0 18px 14px"}, h("summary",null,"حاسبة الزكاة السنوية"), zakatCalc()),
+      h("div",{class:"note",style:"padding:0 18px 14px"}, settings.zakatMode === "sadaqa"
+        ? "تُسجَّل كصدقة. والزكاة الواجبة تكون على المال المدّخر إذا بلغ النصاب ومرّ عليه عام هجري."
+        : "إخراجها مع كل مشروع جائز كتعجيل للزكاة، ويُحسب من زكاة العام. وتُصرف لمستحقي الزكاة. لحالتك الخاصة اسأل دار الإفتاء."));
+  }
+  function zakatCalc(){
+    const out = h("div",{class:"note",style:"font-size:.9rem;color:var(--ink)"});
+    const calc = () => {
+      const g = n($("zkGold").value), sv = n($("zkSave").value);
+      if (!g || !sv){ out.textContent = ""; return; }
+      const nisab = 85 * g;
+      out.textContent = sv >= nisab
+        ? "مدخراتك فوق النصاب (" + rawFmt(Math.round(nisab)) + " " + CUR.EGP + "). الزكاة: " + rawFmt(Math.round(sv * 0.025)) + " " + CUR.EGP + " إذا مرّ عليها عام هجري."
+        : "مدخراتك أقل من النصاب (" + rawFmt(Math.round(nisab)) + " " + CUR.EGP + "). لا زكاة واجبة عليها.";
+    };
+    return h("div",{class:"fgrid",style:"margin-top:10px"},
+      h("label",{class:"f"},"سعر جرام الذهب عيار 21 اليوم", h("input",{id:"zkGold",type:"number",inputmode:"decimal",min:"0",oninput:calc})),
+      h("label",{class:"f"},"كل المدخرات (نقدي + بنك + محافظ)", h("input",{id:"zkSave",type:"number",inputmode:"decimal",min:"0",oninput:calc})),
+      h("div",{class:"full"}, out),
+      h("div",{class:"full note"}, "النصاب = 85 جرام ذهب عيار 21 حسب دار الإفتاء المصرية، والزكاة 2.5%."));
+  }
+
+  // ---------- expenses ----------
+  const ex = {id:null, cur:"EGP"};
+  const EX_SUGG = ["اشتراك Adobe","Canva","Envato","كورس","إنترنت","أجهزة","طباعة","إعلانات"];
+  function openExp(id){
+    const e = id ? all[id] : null;
+    ex.id = id; ex.cur = e && CUR[e.currency] ? e.currency : settings.currency;
+    $("exTitle").textContent = e ? "تعديل مصروف" : "مصروف جديد";
+    $("exAmt").value = e ? e.amount : ""; $("exNote").value = e ? (e.note||"") : "";
+    $("exDate").value = e ? (e.date||todayStr()) : todayStr(); $("exRec").checked = !!(e && e.recurring);
+    $("exDel").hidden = !e;
+    document.querySelectorAll("#expDlg label.f.err").forEach(l=>l.classList.remove("err"));
+    renderExp(); openDlg($("expDlg"));
+    setTimeout(()=>$("exAmt").focus(), 40);
+  }
+  function renderExp(){
+    $("exCur").replaceChildren(...CUR_ORDER.slice(0,3).concat(CUR_ORDER.slice(3)).map(k => h("button",{type:"button",class:"pick","aria-pressed":String(ex.cur===k),onclick:()=>{ex.cur=k;renderExp();}}, CUR[k])));
+    $("exSugg").replaceChildren(...EX_SUGG.map(t => h("button",{type:"button",class:"pick",onclick:()=>{$("exNote").value=t; $("exNote").focus();}}, t)));
+    syncDates($("expDlg"));
+  }
+  $("exClose").onclick = $("exCancel").onclick = () => $("expDlg").close();
+  $("exDel").onclick = () => {
+    const e = all[ex.id]; if (!e) return;
+    if (e.recurring && !e.stopped){ const nx = bodyOf(e); nx.stopped = todayStr().slice(0,7); store.save(e.id, nx); toast("تم إيقاف المصروف الشهري"); }
+    else { store.remove(ex.id); toast("تم حذف المصروف"); }
+    $("expDlg").close();
+  };
+  $("exForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const amt = n($("exAmt").value), note = $("exNote").value.trim();
+    $("lExAmt").classList.toggle("err", !(amt > 0)); $("lExNote").classList.toggle("err", !note);
+    if (!(amt > 0) || !note){ toast("أدخل المبلغ والوصف"); return; }
+    const old = ex.id ? all[ex.id] : null;
+    const data = {...(old ? bodyOf(old) : {}), kind:"expense", amount:amt, currency:ex.cur, note, date:$("exDate").value || todayStr(), recurring:$("exRec").checked};
+    if (!data.recurring) delete data.stopped;
+    if (ex.cur !== settings.currency && !(data.rate && data.rateBase === settings.currency)){ data.rate = rateNow(ex.cur); data.rateBase = settings.currency; }
+    store.save(ex.id || newId(), data);
+    $("expDlg").close(); toast(old ? "تم حفظ التعديل" : "تم تسجيل المصروف");
+  });
 
   function waCard(){
     return h("div",{class:"wa-card"},
@@ -427,7 +618,7 @@
           h("button",{class:"btn sm",type:"button",onclick:()=>openForm(null,{client:c.name,phone:c.phone})}, icon("i-plus"), "مشروع جديد له")));
     }))];
   }
-  function showClient(name){ query = name; filter = "all"; go("jobs"); }
+  function showClient(name){ query = name; filter = "all"; jobsTab = "projects"; go("jobs"); }
 
   // ---------- settings ----------
   let installEvt = null;
@@ -496,6 +687,22 @@
             : h("p",null, isIOS ? "للتثبيت على الآيفون: اضغط زر المشاركة في Safari واختر «Add to Home Screen»." : "للتثبيت: من قائمة المتصفح اختر «Install app» أو «Add to Home screen».")
         )),
       h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"الخصوصية والحماية")),
+        h("div",null, ...lockSettings(),
+          h("label",{style:"display:flex;gap:8px;align-items:center"}, h("input",{type:"checkbox",checked:settings.hideOnOpen?true:null,style:"width:18px;height:18px",onchange:e=>{settings.hideOnOpen=e.target.checked; saveSettings(); toast(e.target.checked ? "المبالغ هتبقى مخفية عند فتح التطبيق" : "تم");}}), "إخفاء المبالغ عند فتح التطبيق"),
+          h("p",{class:"note"},"زر العين بجانب عنوان الصفحة يُظهر المبالغ ويخفيها في أي وقت."))),
+      h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"شاشة البداية")),
+        h("div",null,
+          h("p",null,"دعاء قصير عند فتح التطبيق، ويُغلق وحده بعد 3 ثوانٍ أو بلمسة."),
+          h("div",{class:"picks"}, ...[["daily","أول مرة في اليوم"],["always","كل مرة"],["off","إيقاف"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(settings.splash===k),onclick:()=>{settings.splash=k; saveSettings(); render();}}, t))))),
+      h("section",{class:"panel"},
+        h("div",{class:"panel-h"}, h("h2",null,"الزكاة")),
+        h("div",null,
+          h("p",null,"عند تسليم كل مشروع يظهر " + n(settings.zakatRate) + "% مما استلمته منه، لتُخرجه وتضغط «تم الإخراج»."),
+          h("div",{class:"picks"}, ...[["zakat","زكاة معجّلة"],["sadaqa","صدقة"],["off","إيقاف"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(settings.zakatMode===k),onclick:()=>{settings.zakatMode=k; saveSettings(); render();}}, t))),
+          h("p",{class:"note"}, "الزكاة المعجّلة تُحسب من زكاة العام وتُصرف لمستحقيها، والصدقة لأي باب خير. لحالتك الخاصة اسأل دار الإفتاء."))),
+      h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"التنبيهات")),
         h("div",null,
           h("p",null,"التذكير قبل موعد التسليم بـ:"),
@@ -514,8 +721,8 @@
             h("button",{class:"btn sm primary",type:"button",onclick:restore},"استعادة"),
             h("button",{class:"btn sm",type:"button",onclick:()=>{bk.pending=null;render();}},"إلغاء")) : null,
           h("div",{class:"row-btns"},
-            h("button",{class:"btn sm",type:"button",disabled:!jobs.length?true:null,onclick:()=>download("دفتر-الاستوديو-"+todayStr()+".csv", backupCsv(), "text/csv")},"تنزيل ملف Excel"),
-            h("button",{class:"btn sm",type:"button",disabled:!jobs.length?true:null,onclick:()=>download("دفتر-الاستوديو-نسخة-"+todayStr()+".json", backupJson(), "application/json")},"تنزيل نسخة كاملة"),
+            h("button",{class:"btn sm",type:"button",disabled:!(jobs.length||expenses.length)?true:null,onclick:()=>download("دفتر-المصمم-"+todayStr()+".csv", backupCsv(), "text/csv")},"تنزيل ملف Excel"),
+            h("button",{class:"btn sm",type:"button",disabled:!(jobs.length||expenses.length)?true:null,onclick:()=>download("دفتر-المصمم-نسخة-"+todayStr()+".json", backupJson(), "application/json")},"تنزيل نسخة كاملة"),
             h("label",{class:"btn sm ghost",for:"bkFile",style:"color:var(--accent)"},"استعادة من نسخة"), fileIn)))
     )];
   }
@@ -528,12 +735,12 @@
     document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     settings.lastBackup = todayStr(); saveSettings(); render();
   }
-  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
+  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.concat(expenses).map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
   function backupCsv(){
     const cell = v => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g,'""') + '"'; };
     const head = ["العميل","الرقم","المشروع","النوع","الحالة","العملة","السعر","المدفوع","المدفوع بالـ" + CUR[settings.currency],"المتبقي","البدء","الإنجاز","التسليم","تم التسليم","التعديلات","الدفعات","ملاحظات"];
     const rows = jobs.map(j => [j.client, j.phone, j.title, typeText(j), (STATUS[j.status]||STATUS.new).t, CUR[curOf(j)], n(j.price), paidOf(j), Math.round(paysOf(j).reduce((a,p)=>a+(payBase(p,curOf(j))||0),0)), remOf(j), j.start, j.finish, j.due, j.delivered, j.revisions,
-      paysOf(j).map(p => fmt(p.amount) + " (" + (p.date||"") + (p.rate ? " سعر " + fmtRate(p.rate) : "") + (p.note ? " " + p.note : "") + ")").join(" + "), j.notes]);
+      paysOf(j).map(p => rawFmt(p.amount) + " (" + (p.date||"") + (p.rate ? " سعر " + fmtRate(p.rate) : "") + (p.note ? " " + p.note : "") + ")").join(" + "), j.notes]);
     return "﻿" + [head, ...rows].map(r => r.map(cell).join(",")).join("\r\n");
   }
   function readBackup(file){
@@ -564,11 +771,12 @@
   }
 
   // ---------- add / edit form ----------
-  const wz = {id:null, types:[], cur:"EGP", dur:null, onSaved:null};
+  const wz = {id:null, types:[], cur:"EGP", phases:[], finishAuto:true, onSaved:null};
+  const daysBetween = (a, b) => { const x = parseD(a), y = parseD(b); return x && y ? Math.round((y - x) / 86400000) : ""; };
   const CUR_ORDER = ["EGP","SAR","USD","AED","KWD","EUR"];
   function openForm(id, preset){
     const j = id ? all[id] : null;
-    wz.id = id; wz.dur = null; wz.onSaved = preset?.onSaved || null;
+    wz.id = id; wz.onSaved = preset?.onSaved || null;
     $("wzTitle").textContent = j ? "تعديل المشروع" : "مشروع جديد";
     $("wzSave").textContent = j ? "حفظ التعديلات" : "حفظ المشروع";
     const src = j || preset || {};
@@ -584,12 +792,15 @@
     $("fStart").value = src.start || (j ? "" : todayStr());
     $("fDue").value = src.due || "";
     $("fFinish").value = src.finish || "";
+    wz.finishAuto = !src.finish;
+    wz.phases = phasesOf(src).map(p => ({...p}));
+    $("fDays").value = src.due ? daysBetween($("fStart").value || todayStr(), src.due) : "";
     $("fNotes").value = src.notes || "";
     wz.types = typesOf(src).filter(t => TYPES.includes(t));
     $("more").open = !!(src.notes || src.revisions);
     document.querySelectorAll("label.f.err").forEach(l=>l.classList.remove("err"));
     renderForm();
-    $("wizDlg").showModal();
+    openDlg($("wizDlg"));
     setTimeout(()=>{ const f = !$("fClient").value ? $("fClient") : !$("fTitle").value ? $("fTitle") : $("fPrice"); f.focus(); }, 40);
   }
   function renderForm(){
@@ -603,12 +814,58 @@
     $("lRate").hidden = !foreign;
     if (foreign){ $("lRateT").textContent = "سعر الصرف: 1 " + CUR[wz.cur] + " = " + CUR[settings.currency]; if (!$("fRate").value && rateNow(wz.cur)) $("fRate").value = rateNow(wz.cur); }
     $("typePicks").replaceChildren(...TYPES.map(t => h("button",{type:"button",class:"pick","aria-pressed":String(wz.types.includes(t)),onclick:()=>{wz.types = wz.types.includes(t) ? wz.types.filter(x=>x!==t) : [...wz.types, t]; renderForm();}}, t)));
-    $("durPicks").replaceChildren(...DURS.map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(wz.dur===k),onclick:()=>{
-      wz.dur = k; const st = $("fStart").value || todayStr();
-      $("fDue").value = addDays(st, k); $("fFinish").value = addDays(st, Math.max(1, k - (k>=7?2:1))); renderForm(); }}, t)));
+    renderPhases();
     syncDates($("wizDlg"));
   }
-  $("fDue").addEventListener("input", () => { wz.dur = null; renderForm(); });
+  // phases: each phase starts when the previous one ends
+  function phaseDates(){
+    let cur = $("fStart").value || todayStr();
+    for (const p of wz.phases){ cur = addDays(cur, n(p.days)); p.due = cur; }
+  }
+  function syncFromPhases(){
+    phaseDates();
+    const has = wz.phases.length > 0;
+    $("daysRow").classList.toggle("computed", has);
+    $("fDays").readOnly = has; $("fDue").readOnly = has;
+    if (has){
+      $("fDays").value = wz.phases.reduce((a,p)=>a+n(p.days),0);
+      $("fDue").value = wz.phases[wz.phases.length-1].due;
+      if (wz.finishAuto) $("fFinish").value = addDays($("fDue").value, -1);
+      document.querySelectorAll("#phases .ph-date").forEach((el,i) => el.textContent = "← " + dlong(wz.phases[i].due));
+    }
+    syncDates($("wizDlg"));
+  }
+  function renderPhases(){
+    phaseDates();
+    $("phases").replaceChildren(...wz.phases.map((p, i) => h("div",{class:"ph-row"},
+      h("input",{value:p.title||"",placeholder:"المرحلة " + (i+1) + " (مثلاً: اللوجو)","aria-label":"اسم المرحلة",oninput:e=>{p.title=e.target.value;}}),
+      h("input",{type:"number",min:"1",inputmode:"numeric",value:p.days||"",placeholder:"أيام","aria-label":"عدد الأيام",oninput:e=>{p.days=n(e.target.value); syncFromPhases();}}),
+      h("span",{class:"ph-date"}, p.due ? "← " + dlong(p.due) : ""),
+      h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف المرحلة",onclick:()=>{wz.phases.splice(i,1); renderPhases();}}, icon("i-x")))));
+    $("addPhase").lastChild.textContent = wz.phases.length ? "مرحلة أخرى" : "تقسيم التسليم على مراحل";
+    syncFromPhases();
+  }
+  $("addPhase").addEventListener("click", () => {
+    if (!wz.phases.length) wz.phases.push({id:newId(), title:"", days: n($("fDays").value) || 7});
+    else wz.phases.push({id:newId(), title:"", days:7});
+    renderPhases();
+    const ins = $("phases").querySelectorAll(".ph-row input:first-child"); ins[ins.length-1].focus();
+  });
+  $("fDays").addEventListener("input", () => {
+    if (wz.phases.length) return;
+    const d = $("fDays").value;
+    if (d === "") return;
+    $("fDue").value = addDays($("fStart").value || todayStr(), n(d));
+    if (wz.finishAuto) $("fFinish").value = addDays($("fDue").value, -1);
+    syncDates($("wizDlg"));
+  });
+  $("fDue").addEventListener("input", () => {
+    if (wz.phases.length) return;
+    $("fDays").value = $("fDue").value ? daysBetween($("fStart").value || todayStr(), $("fDue").value) : "";
+    if (wz.finishAuto && $("fDue").value) $("fFinish").value = addDays($("fDue").value, -1);
+  });
+  $("fFinish").addEventListener("input", () => { wz.finishAuto = !$("fFinish").value; });
+  $("fStart").addEventListener("input", () => { if (wz.phases.length) syncFromPhases(); else if ($("fDays").value !== "") $("fDays").dispatchEvent(new Event("input")); });
   $("wzClose").onclick = $("wzCancel").onclick = () => $("wizDlg").close();
   $("wzForm").addEventListener("submit", e => { e.preventDefault(); saveForm(); });
   function saveForm(){
@@ -624,6 +881,9 @@
       price:n($("fPrice").value), currency:wz.cur, revisions: $("fRevs").value === "" ? "" : n($("fRevs").value),
       start, due:$("fDue").value, finish:$("fFinish").value, notes:$("fNotes").value.trim()
     });
+    phaseDates();
+    data.phases = wz.phases.filter(p => n(p.days) > 0).map((p,i) => ({id:p.id || newId(), title:(p.title||"").trim() || "المرحلة " + (i+1), days:n(p.days), due:p.due, done:!!p.done, doneDate:p.doneDate||""}));
+    if (data.phases.length) data.due = data.phases[data.phases.length-1].due;
     if (!j){ const dep = n($("fDeposit").value); if (dep > 0) data.payments = [stampPay({amount:dep, date:start||todayStr(), note:"عربون", rate: n($("fRate").value) || null}, wz.cur)]; }
     const id = wz.id || newId();
     store.save(id, data);
@@ -634,8 +894,14 @@
 
   // ---------- details sheet ----------
   let sheetId = null, confirmDel = false, payDraft = null;
-  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; renderSheet(); $("sheetDlg").showModal(); }
-  for (const d of ["sheetDlg","wizDlg","waDlg"]) $(d).addEventListener("click", e => { if (e.target === $(d)) $(d).close(); });
+  let meetDraft = null;
+  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; renderSheet(); openDlg($("sheetDlg")); }
+  function praise(sub){
+    const p = $("praise"); topHost().appendChild(p); $("praiseSub").textContent = sub || "";
+    p.hidden = true; void p.offsetWidth; p.hidden = false;
+    clearTimeout(praise._t); praise._t = setTimeout(() => { p.hidden = true; }, 2200);
+  }
+  for (const d of ["sheetDlg","wizDlg","waDlg","expDlg"]) $(d).addEventListener("click", e => { if (e.target === $(d)) $(d).close(); });
 
   function renderSheet(){
     const j = jobs.find(x=>x.id===sheetId);
@@ -646,13 +912,20 @@
     const digits = (j.phone||"").replace(/[^\d]/g,"");
     const wa = digits.startsWith("0") && digits.length === 11 ? "2" + digits : digits;
     const save = (next, msg) => { store.save(j.id, next); toast(msg); };
-    const setStatus = (s) => { const nx = bodyOf(j); nx.status = s; nx.delivered = s === "done" ? (nx.delivered || todayStr()) : ""; save(nx, "الحالة: " + STATUS[s].t); };
+    const setStatus = (s) => {
+      const was = j.status, nx = bodyOf(j); nx.status = s; nx.delivered = s === "done" ? (nx.delivered || todayStr()) : "";
+      if (s === "done") nx.phases = phasesOf(j).map(p => p.done ? p : {...p, done:true, doneDate:todayStr()});
+      store.save(j.id, nx);
+      if (s === "done" && was !== "done") praise("تم تسليم " + (j.title || "المشروع")); else toast("الحالة: " + STATUS[s].t);
+    };
+    const remindMsg = "أهلاً " + (j.client || "") + "،\nحبيت أفكّر حضرتك بالمتبقي من حساب مشروع «" + (j.title || "") + "»: " + rawFmt(rem) + " " + CUR[cur] + ".\nشكراً لحضرتك.";
 
     const payForm = j.status !== "cancel" && rem > 0 ? h("form",{class:"payform",onsubmit:e=>{
         e.preventDefault();
         const amt = n($("pAmt").value); if (amt <= 0){ toast("أدخل المبلغ"); return; }
         const nx = bodyOf(j); nx.payments = [...paysOf(j), stampPay({amount:amt, date:$("pDate").value||todayStr(), note:$("pNote").value.trim(), rate: $("pRate") ? n($("pRate").value) || null : null, ...($("pRecv").checked ? {} : {received:false})}, cur)];
-        payDraft = null; save(nx, "تم تسجيل دفعة " + money(amt, cur));
+        payDraft = null;
+        if ($("pRecv").checked){ store.save(j.id, nx); praise("تم استلام " + money(amt, cur)); } else save(nx, "تم تسجيل دفعة قيد التحويل");
       }},
       h("label",{class:"f money-in"},"المبلغ ("+CUR[cur]+")", h("input",{id:"pAmt",type:"number",min:"0",step:"any",inputmode:"decimal",value:payDraft?payDraft.amt:String(rem)})),
       h("label",{class:"f"},"التاريخ", h("input",{id:"pDate",type:"date",value:payDraft?payDraft.date:todayStr()})),
@@ -665,7 +938,8 @@
 
     $("sheet").replaceChildren(
       h("div",{class:"sh-h"},
-        h("div",{class:"row"}, h("h2",null, j.title||"بدون اسم"), h("button",{class:"btn ghost sm",type:"button","aria-label":"إغلاق",onclick:()=>$("sheetDlg").close()}, icon("i-x"))),
+        h("button",{class:"back",type:"button",onclick:()=>$("sheetDlg").close()}, icon("i-back"), "رجوع"),
+        h("div",{class:"row"}, h("h2",null, j.title||"بدون اسم")),
         h("div",{class:"who"}, (j.client||"—") + (typeText(j) ? " · " + typeText(j) : "")),
         h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"}, stPill(j), cdChip(j))),
       h("div",{class:"sh-b"},
@@ -675,7 +949,10 @@
             h("div",null, h("span",null,"السعر"), h("b",{class:"num"}, fmt(price))),
             h("div",null, h("span",null,"المدفوع"), h("b",{class:"num",style:"color:var(--ok)"}, fmt(paid))),
             h("div",null, h("span",null,"المتبقي"), h("b",{class:"num jrem "+(rem>0?"has":"zero")}, rem>0?fmt(rem):"مدفوع بالكامل ✓"))),
-          h("div",{class:"meter"+(price&&paid>=price?" full":""),style:"margin-top:10px"}, h("i",{style:"width:"+(price?Math.min(100,paid/price*100):0).toFixed(1)+"%"}))),
+          h("div",{class:"meter"+(price&&paid>=price?" full":""),style:"margin-top:10px"}, h("i",{style:"width:"+(price?Math.min(100,paid/price*100):0).toFixed(1)+"%"})),
+          j.status === "done" && settings.zakatMode !== "off" && (zakatDue(j) > 0 || n(j.zakatPaid) > 0) ? h("div",{class:"zk",style:"margin-top:12px"},
+            h("div",{class:"grow"}, zkWord() + " المشروع (" + n(settings.zakatRate) + "%): ", h("b",{class:"num"}, money(zakatDue(j) || n(j.zakatPaid)))),
+            zakatDue(j) > 0 ? h("button",{class:"btn sm",type:"button",onclick:()=>markZakat(j)},"تم الإخراج ✓") : h("span",{class:"cd c-done"},"تم الإخراج ✓")) : null),
         h("div",{class:"blk"},
           h("h3",null,"الدفعات"),
           pays.length ? h("ul",{class:"pays"}, ...pays.map(p => h("li",null,
@@ -683,10 +960,34 @@
             cur !== settings.currency ? h("span",{class:"hint num"}, payBase(p,cur) != null ? "= " + money(Math.round(payBase(p,cur))) + (p.rate && p.rateBase === settings.currency ? " (سعر " + fmtRate(p.rate) + ")" : " تقريباً") : "بدون سعر صرف") : null,
             h("span",{class:"n"}, p.note||""),
             !isRecv(p) ? h("span",{class:"cd c-soon"},"قيد التحويل") : null,
-            !isRecv(p) ? h("button",{class:"btn sm",type:"button",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? {...q, received:true, recvDate:todayStr(), ...(cur!==settings.currency && !(q.rate && q.rateBase===settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q); save(nx, "تم استلام " + money(p.amount,cur) + " ✓"); }},"تم الاستلام") : null,
+            !isRecv(p) ? h("button",{class:"btn sm",type:"button",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? {...q, received:true, recvDate:todayStr(), ...(cur!==settings.currency && !(q.rate && q.rateBase===settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q); store.save(j.id, nx); praise("تم استلام " + money(p.amount,cur)); }},"تم الاستلام") : null,
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الدفعة",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).filter((_,i)=>i!==p.i); save(nx,"تم حذف الدفعة"); }}, icon("i-x"))
           ))) : h("div",{class:"hint"},"لا توجد دفعات بعد."),
           payForm),
+        phasesOf(j).length ? h("div",{class:"blk"}, h("h3",null,"مراحل التسليم"),
+          h("ul",{class:"mt"}, ...phasesOf(j).map((p, i) => h("li",{class:p.done?"done":""},
+            h("input",{type:"checkbox",checked:p.done?true:null,"aria-label":"تمت المرحلة",onchange:e=>{
+              const nx = bodyOf(j); nx.phases = phasesOf(j).map((q,k) => k===i ? {...q, done:e.target.checked, doneDate:e.target.checked?todayStr():""} : q);
+              store.save(j.id, nx); if (e.target.checked) toast("تمت مرحلة «" + (p.title||"") + "» ✓"); }}),
+            h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1)))),
+            h("span",{class:"cd " + (p.done ? "c-done" : daysUntil(p.due) < 0 ? "c-late" : daysUntil(p.due) <= 2 ? "c-soon" : "c-ok")}, p.done ? "تمت" : dshort(p.due)))))) : null,
+        h("div",{class:"blk"},
+          h("div",{style:"display:flex;align-items:center;gap:8px"}, h("h3",{style:"margin:0;flex:1"},"الاجتماعات"),
+            !meetDraft ? h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>{meetDraft={title:"اجتماع مع " + (j.client||"العميل"), date:todayStr(), time:"12:00"}; renderSheet(); setTimeout(()=>$("mTitle")?.focus(),30);}}, icon("i-plus"), "اجتماع") : null),
+          meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => h("li",{class:daysUntil(m.date) < 0 ? "done" : ""},
+            icon("i-cal"), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : ""))),
+            h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الاجتماع",onclick:()=>{ const nx = bodyOf(j); nx.meetings = meetingsOf(j).filter(x=>x.id!==m.id); save(nx,"تم حذف الاجتماع"); }}, icon("i-x"))))) : (!meetDraft ? h("div",{class:"hint",style:"margin-top:4px"},"لا توجد اجتماعات.") : null),
+          meetDraft ? h("form",{class:"mini",onsubmit:e=>{
+              e.preventDefault();
+              const m = {id:newId(), title:$("mTitle").value.trim() || "اجتماع", date:$("mDate").value || todayStr(), time:$("mTime").value || ""};
+              const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m]; meetDraft = null;
+              save(nx, "تم حفظ الاجتماع. هنفكّرك قبلها");
+              if ("Notification" in window && Notification.permission === "default") enableNotify();
+            }},
+            h("label",{class:"f full"},"العنوان", h("input",{id:"mTitle",value:meetDraft.title,oninput:e=>{meetDraft.title=e.target.value;}})),
+            h("label",{class:"f"},"اليوم", h("input",{id:"mDate",type:"date",value:meetDraft.date,oninput:e=>{meetDraft.date=e.target.value;}})),
+            h("label",{class:"f"},"الساعة", h("input",{id:"mTime",type:"time",value:meetDraft.time,oninput:e=>{meetDraft.time=e.target.value;}})),
+            h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary sm",type:"submit"},"حفظ"), h("button",{class:"btn sm",type:"button",onclick:()=>{meetDraft=null;renderSheet();}},"إلغاء"))) : null),
         h("div",{class:"blk"}, h("h3",null,"الحالة"),
           h("div",{class:"picks"}, ...Object.entries(STATUS).map(([k,v]) => h("button",{class:"pick",type:"button","aria-pressed":String(j.status===k),onclick:()=>setStatus(k)}, v.t)))),
         h("div",{class:"blk"},
@@ -694,10 +995,11 @@
           h("div",{class:"kv"},
             h("span",null,"الرقم"), h("div",{class:"phone"}, h("code",null, j.phone||"—"),
               j.phone ? h("button",{class:"btn sm",type:"button",onclick:async()=>{try{await navigator.clipboard.writeText(j.phone);toast("تم نسخ الرقم")}catch(e){toast("حدّد الرقم وانسخه")}}},"نسخ") : null,
-              wa ? h("a",{class:"btn sm",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener"},"واتساب") : null),
+              wa ? h("a",{class:"btn sm",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener"},"واتساب") : null,
+              wa && rem > 0 && j.status !== "cancel" ? h("a",{class:"btn sm wa",href:"https://wa.me/"+wa+"?text="+encodeURIComponent(remindMsg),target:"_blank",rel:"noopener"},"ذكّر العميل") : null),
             h("span",null,"البدء"), h("span",null, dlong(j.start)),
             h("span",null,"الإنجاز"), h("span",null, dlong(j.finish)),
-            h("span",null,"التسليم"), h("b",null, dlong(j.due)),
+            h("span",null, phasesOf(j).length ? "التسليم النهائي" : "التسليم"), h("b",null, dlong(j.due)),
             j.status==="done" ? h("span",null,"تم التسليم") : null, j.status==="done" ? h("span",null, dlong(j.delivered)) : null,
             h("span",null,"التعديلات"), h("span",null, j.revisions!==""&&j.revisions!=null ? j.revisions+" متفق عليها" : "—"))),
         j.notes ? h("div",{class:"blk"}, h("h3",null,"ملاحظات"), h("div",{style:"white-space:pre-wrap;overflow-wrap:anywhere;font-size:.92rem"}, j.notes)) : null,
@@ -719,7 +1021,7 @@
     if (typeof text === "string"){ wa.text = text; wa.result = null; }
     else if (wa.result && wa.result.actions.every(a=>a.state!=="pending")){ wa.text = ""; wa.result = null; }
     if (wa.text && !wa.result) analyze();
-    renderWa(); if (!$("waDlg").open) $("waDlg").showModal();
+    renderWa(); openDlg($("waDlg"));
     setTimeout(()=>{ const t = $("waText"); if (t && !wa.text) t.focus(); }, 40);
   }
   function analyze(){
@@ -906,10 +1208,129 @@
     } catch(e){}
   }
 
+  // ---------- app lock (PIN + fingerprint/face) ----------
+  const lockUI = {pin:"", msg:"", forgot:false, wipe:false};
+  const setup = {step:0, first:"", msg:""};
+  const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const unb64u = (str) => Uint8Array.from(atob(str.replace(/-/g,"+").replace(/_/g,"/")), c => c.charCodeAt(0));
+  async function sha(str){ const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+  const isLocked = () => document.documentElement.hasAttribute("data-locked");
+  let bioAvail = false;
+  try { window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => { bioAvail = !!v; if (view === "settings") render(); }).catch(()=>{}); } catch(e){}
+  function lockNow(){
+    if (!settings.lock || !settings.lock.on) return;
+    document.querySelectorAll("dialog[open]").forEach(d => d.close());
+    document.documentElement.setAttribute("data-locked","1");
+    Object.assign(lockUI, {pin:"", msg:"", forgot:false, wipe:false}); renderLock();
+    if (settings.lock.cred && !document.documentElement.hasAttribute("data-splash")) setTimeout(tryBio, 250);
+  }
+  function unlockNow(){ document.documentElement.removeAttribute("data-locked"); settings.lock.fails = 0; settings.lock.until = 0; saveSettings(); lastHidden = 0; }
+  async function tryBio(){
+    if (!settings.lock.cred || !window.PublicKeyCredential) return;
+    try {
+      await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)), allowCredentials:[{type:"public-key", id:unb64u(settings.lock.cred)}], userVerification:"required", timeout:60000}});
+      unlockNow();
+    } catch(e){ lockUI.msg = ""; renderLock(); }
+  }
+  async function pressKey(k){
+    if (Date.now() < (settings.lock.until || 0)){ lockUI.msg = "محاولات كثيرة. انتظر دقيقة."; renderLock(); return; }
+    if (k === "del") lockUI.pin = lockUI.pin.slice(0, -1); else if (lockUI.pin.length < 4) lockUI.pin += k;
+    lockUI.msg = ""; renderLock();
+    if (lockUI.pin.length === 4){
+      if ((await sha(settings.lock.salt + ":" + lockUI.pin)) === settings.lock.hash) return unlockNow();
+      settings.lock.fails = (settings.lock.fails || 0) + 1;
+      if (settings.lock.fails >= 5){ settings.lock.until = Date.now() + 60000; settings.lock.fails = 0; lockUI.msg = "محاولات كثيرة. انتظر دقيقة."; }
+      else lockUI.msg = "الرمز غير صحيح";
+      saveSettings(); lockUI.pin = ""; renderLock();
+      try { navigator.vibrate && navigator.vibrate(120); } catch(e){}
+    }
+  }
+  function renderLock(){
+    const L = $("lock");
+    if (lockUI.forgot){
+      L.replaceChildren(icon("i-reg","logo"), h("h2",null,"نسيت الرمز؟"),
+        h("div",{class:"forgot"}, settings.lock.cred ? "افتح بالبصمة. " : "", "أو امسح بيانات التطبيق من هذا الجهاز، ثم استرجعها من شيت جوجل أو من النسخة الاحتياطية."),
+        lockUI.wipe ? h("div",{class:"forgot",style:"background:rgba(244,63,94,.18)"}, "سيتم حذف كل البيانات من هذا الجهاز. متأكد؟",
+            h("div",{style:"display:flex;gap:8px;justify-content:center;margin-top:10px"},
+              h("button",{class:"btn sm danger solid",type:"button",onclick:()=>{ try { Object.keys(localStorage).filter(k=>k.startsWith("ledger.")).forEach(k=>localStorage.removeItem(k)); } catch(e){} location.reload(); }},"احذف البيانات"),
+              h("button",{class:"btn sm",type:"button",onclick:()=>{lockUI.wipe=false;renderLock();}},"إلغاء")))
+          : h("button",{class:"btn sm",type:"button",style:"background:rgba(255,255,255,.1);color:#fff;border-color:transparent",onclick:()=>{lockUI.wipe=true;renderLock();}},"مسح البيانات من هذا الجهاز"),
+        settings.lock.cred ? h("button",{class:"btn primary sm",type:"button",onclick:tryBio}, icon("i-finger"), "فتح بالبصمة") : null,
+        h("button",{class:"link",type:"button",onclick:()=>{lockUI.forgot=false;lockUI.wipe=false;renderLock();}},"رجوع"));
+      return;
+    }
+    const keys = ["1","2","3","4","5","6","7","8","9", settings.lock.cred ? "bio" : "", "0", "del"];
+    L.replaceChildren(icon("i-reg","logo"), h("h2",null,"أدخل الرمز"),
+      h("div",{class:"dots","aria-label":"الرمز"}, ...[0,1,2,3].map(i => h("i",{class:i < lockUI.pin.length ? "on" : ""}))),
+      h("div",{class:"msg",role:"alert"}, lockUI.msg),
+      h("div",{class:"pad"}, ...keys.map(k => k === "" ? h("span") :
+        h("button",{type:"button",class:k==="bio"||k==="del"?"ghost":"","aria-label":k==="bio"?"البصمة":k==="del"?"مسح":k,onclick:()=>k==="bio"?tryBio():pressKey(k)},
+          k === "bio" ? icon("i-finger") : k === "del" ? "⌫" : k))),
+      h("button",{class:"link",type:"button",onclick:()=>{lockUI.forgot=true;renderLock();}},"نسيت الرمز؟"));
+  }
+  document.addEventListener("keydown", e => { if (!isLocked() || lockUI.forgot) return; if (/^[0-9]$/.test(e.key)) pressKey(e.key); else if (e.key === "Backspace") pressKey("del"); });
+  let lastHidden = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden){ lastHidden = Date.now(); return; }
+    if (settings.lock && settings.lock.on && !isLocked() && lastHidden && Date.now() - lastHidden >= n(settings.lockAfter) * 60000) lockNow();
+  });
+  async function enableBio(){
+    try {
+      const cred = await navigator.credentials.create({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)), rp:{name:"دفتر المصمم"},
+        user:{id:crypto.getRandomValues(new Uint8Array(16)), name:"daftar", displayName:"دفتر المصمم"},
+        pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}],
+        authenticatorSelection:{authenticatorAttachment:"platform", userVerification:"required", residentKey:"discouraged"}, timeout:60000, attestation:"none"}});
+      settings.lock.cred = b64u(cred.rawId); saveSettings(); toast("تم تفعيل البصمة ✓"); render();
+    } catch(e){ toast("لم يتم تفعيل البصمة"); }
+  }
+  function lockSettings(){
+    const L = settings.lock || {};
+    if (setup.step){
+      const inp = h("input",{id:"pinIn",type:"password",inputmode:"numeric",maxlength:"4",autocomplete:"off",placeholder:"••••",style:"letter-spacing:.5em;text-align:center;font-size:1.3rem",
+        oninput:async e => {
+          const v = e.target.value.replace(/\D/g,"").slice(0,4); e.target.value = v;
+          if (v.length < 4) return;
+          if (setup.step === 1){ setup.first = v; setup.step = 2; setup.msg = ""; render(); setTimeout(()=>$("pinIn")?.focus(),30); return; }
+          if (v !== setup.first){ setup.step = 1; setup.first = ""; setup.msg = "الرمزان غير متطابقين. حاول مرة أخرى."; render(); setTimeout(()=>$("pinIn")?.focus(),30); return; }
+          const salt = b64u(crypto.getRandomValues(new Uint8Array(16)));
+          settings.lock = {...L, on:true, salt, hash: await sha(salt + ":" + v), fails:0, until:0};
+          saveSettings(); setup.step = 0; setup.first = "";
+          toast(settings.sheetUrl ? "تم تفعيل القفل ✓" : "تم تفعيل القفل ✓ — يُفضّل تنزيل نسخة احتياطية");
+          render();
+        }});
+      return [h("label",{class:"f"}, setup.step === 1 ? "اختر رمزاً من 4 أرقام" : "أعد كتابة الرمز للتأكيد", inp),
+        setup.msg ? h("div",{class:"note",style:"color:var(--bad)"}, setup.msg) : null,
+        h("button",{class:"btn sm",type:"button",style:"align-self:flex-start",onclick:()=>{setup.step=0;setup.first="";setup.msg="";render();}},"إلغاء")];
+    }
+    if (!L.on) return [h("p",null,"اقفل التطبيق برمز سري أو البصمة، فلا يفتحه أحد غيرك."),
+      h("button",{class:"btn primary sm",type:"button",style:"align-self:flex-start",onclick:()=>{setup.step=1;render();setTimeout(()=>$("pinIn")?.focus(),30);}}, "تفعيل قفل التطبيق")];
+    return [h("div",{class:"row-btns"}, h("span",{class:"cd c-done"},"✓ القفل مفعّل"),
+        L.cred ? h("span",{class:"cd c-done"},"✓ البصمة") : bioAvail ? h("button",{class:"btn sm",type:"button",onclick:enableBio}, icon("i-finger"), "تفعيل البصمة") : null),
+      h("div",null, h("span",{class:"flabel"},"يُقفل بعد الخروج منه"),
+        h("div",{class:"picks"}, ...[[0,"فوراً"],[1,"دقيقة"],[5,"5 دقائق"]].map(([k,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(n(settings.lockAfter)===k),onclick:()=>{settings.lockAfter=k;saveSettings();render();}}, t)))),
+      h("div",{class:"row-btns"},
+        h("button",{class:"btn sm",type:"button",onclick:()=>{setup.step=1;render();setTimeout(()=>$("pinIn")?.focus(),30);}},"تغيير الرمز"),
+        L.cred ? h("button",{class:"btn sm ghost",type:"button",onclick:()=>{delete settings.lock.cred;saveSettings();render();}},"إيقاف البصمة") : null,
+        h("button",{class:"btn sm ghost danger",type:"button",onclick:()=>{settings.lock={on:false};saveSettings();toast("تم إيقاف القفل");render();}},"إيقاف القفل"))];
+  }
+
+  // ---------- start screen (dua) ----------
+  function runSplash(){
+    if (!document.documentElement.hasAttribute("data-splash")) return;
+    const d = new Date(); settings.lastSplashDay = d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate(); saveSettings();
+    const sp = $("splash"); let done = false;
+    const hide = () => { if (done) return; done = true; sp.classList.add("out");
+      setTimeout(() => { document.documentElement.removeAttribute("data-splash"); sp.classList.remove("out"); if (isLocked() && settings.lock.cred) tryBio(); }, 350); };
+    setTimeout(hide, 3000); sp.addEventListener("click", hide);
+  }
+
   // ---------- boot ----------
   // first run on a new device: nothing local, sheet linked → pull
   if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register("sw.js").catch(()=>{});
+  if (isLocked()){ if (settings.lock && settings.lock.on) renderLock(); else document.documentElement.removeAttribute("data-locked"); }
   render();
+  runSplash();
+  if (isLocked() && settings.lock.cred && !document.documentElement.hasAttribute("data-splash")) setTimeout(tryBio, 300);
   fetchRates();
   takeShared();
   scheduleSync(500);

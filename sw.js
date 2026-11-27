@@ -1,6 +1,8 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v7";
-const SHELL = ["./", "index.html", "app.js", "parser.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "ledger-v8";
+const SHELL = ["./", "index.html", "app.js", "parser.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+  "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
+  "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -40,15 +42,13 @@ self.addEventListener("fetch", (e) => {
   }
   if (url.origin !== location.origin) return;
 
-  // App files: network first (so updates arrive), cache when offline
+  // App files: open instantly from the phone, fetch updates in the background for next time
   e.respondWith((async () => {
-    try {
-      const res = await fetch(e.request);
-      if (res.ok) (await caches.open(VERSION)).put(e.request, res.clone());
-      return res;
-    } catch (err) {
-      return (await caches.match(e.request, { ignoreSearch: true })) || (await caches.match("index.html"));
-    }
+    const cache = await caches.open(VERSION);
+    const hit = await cache.match(e.request, { ignoreSearch: true });
+    const net = fetch(e.request).then((res) => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => null);
+    if (hit) { e.waitUntil(net); return hit; }
+    return (await net) || (await cache.match("index.html")) || Response.error();
   })());
 });
 
@@ -64,14 +64,16 @@ async function checkDue() {
   const key = today.toISOString().slice(0, 10);
   if (last && (await last.text()) === key) return;
   const days = Number(daysRes ? await daysRes.text() : 3) || 3;
+  const meetRes = await c.match("meetings");
+  const meets = meetRes ? (await meetRes.json()).filter((m) => m.date === key) : [];
   const list = (await snap.json()).map((j) => {
     const [y, m, d] = j.due.split("-").map(Number);
     return { ...j, k: Math.round((new Date(y, m - 1, d) - today) / 86400000) };
   }).filter((j) => j.k <= days).sort((a, b) => a.k - b.k);
-  if (!list.length) return;
+  if (!list.length && !meets.length) return;
   const word = (k) => (k === 1 ? "يوم" : k === 2 ? "يومين" : k + " أيام");
   const line = (j) => (j.k < 0 ? "متأخر " + word(-j.k) : j.k === 0 ? "التسليم اليوم" : j.k === 1 ? "التسليم غداً" : "متبقٍ " + word(j.k)) + ": " + j.title + (j.client ? " — " + j.client : "");
-  await self.registration.showNotification("مواعيد تسليم قريبة", { body: list.slice(0, 4).map(line).join("\n"), tag: "due-today", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar" });
+  await self.registration.showNotification("مواعيد تسليم قريبة", { body: meets.map((m) => "اجتماع " + (m.time || "") + ": " + (m.title || "")).concat(list.slice(0, 4).map(line)).join("\n"), tag: "due-today", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar" });
   if (self.navigator.setAppBadge) self.navigator.setAppBadge(list.length).catch(() => {});
   await c.put("last", new Response(key));
 }
