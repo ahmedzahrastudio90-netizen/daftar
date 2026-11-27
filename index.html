@@ -598,6 +598,11 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .meet-edit{margin:0}
 .m-notes{display:block;font-size:.8rem;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px}
 .btn.icon-only{padding-inline:8px}
+.kind-picks{display:flex;flex-wrap:wrap;gap:6px}
+.kind-picks .pick{padding:6px 12px;font-size:.82rem;border-radius:999px}
+.kind{display:table;margin-bottom:3px;font-style:normal;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:999px;margin-inline-end:6px;vertical-align:1px;background:var(--accent-soft);color:var(--accent)}
+.k-ideas{background:#FEF3C7;color:#92400E}.k-sketch{background:#EDE9FE;color:#5B21B6}.k-dir{background:#E0F2FE;color:#075985}.k-strategy{background:#DCFCE7;color:#166534}.k-final{background:#FCE7F3;color:#9D174D}.k-client{background:#F1F5F9;color:#334155}
+:root[data-theme=dark] .kind{filter:saturate(.9) brightness(.95)}
 .btn.cal.icon-only{padding-inline:8px}
 #praise canvas.fw{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #praise b,#praise span{position:relative}
@@ -811,7 +816,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="parser.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v21";
-const SHELL = ["./", "index.html", "app.js?v=21", "parser.js?v=21", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+const VERSION = "ledger-v22";
+const SHELL = ["./", "index.html", "app.js?v=22", "parser.js?v=22", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
   "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2", "lib/qrcode.js"];
 
