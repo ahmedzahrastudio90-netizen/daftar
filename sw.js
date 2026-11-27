@@ -1,8 +1,8 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v16";
-const SHELL = ["./", "index.html", "app.js?v=16", "parser.js?v=16", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+const VERSION = "ledger-v17";
+const SHELL = ["./", "index.html", "app.js?v=17", "parser.js?v=17", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
-  "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2"];
+  "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2", "lib/qrcode.js"];
 
 self.addEventListener("install", (e) => {
   // "reload" skips the browser's HTTP cache, so a new version never mixes with old files

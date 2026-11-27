@@ -13,6 +13,8 @@
 <link rel="icon" href="icons/icon.svg?v=2" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=2">
 <link rel="preload" href="fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
 /* before first paint: decide splash + lock so nothing private flashes on screen */
 try{var _s=JSON.parse(localStorage.getItem("ledger.settings")||"{}"),_d=new Date(),_t=_d.getFullYear()+"-"+(_d.getMonth()+1)+"-"+_d.getDate(),_m=_s.splash||"daily";
@@ -26,6 +28,7 @@ if(_s.hideOnOpen)document.documentElement.setAttribute("data-hide","1");}catch(e
 @font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2) format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+200C-200E,U+2010-2011,U+FB50-FDFF,U+FE70-FEFC}
 @font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF}
 @font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF}
+@font-face{font-family:"IBM Plex Sans Arabic";font-style:normal;font-weight:700;font-display:swap;src:url(fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2) format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+200C-200E,U+2010-2011,U+FB50-FDFF,U+FE70-FEFC}
 @font-face{font-family:"Readex Pro";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/readex-pro-arabic-600-normal.woff2) format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+200C-200E,U+2010-2011,U+FB50-FDFF,U+FE70-FEFC}
 @font-face{font-family:"Readex Pro";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/readex-pro-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF}
 [hidden]{display:none!important}
@@ -466,7 +469,13 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 :root[data-splash] #splash{display:flex}
 #splash{position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px max(24px,env(safe-area-inset-left,0px));text-align:center;color:#fff;cursor:pointer;
   background:radial-gradient(120% 60% at 100% 0%,rgba(59,130,246,.35),transparent 60%),radial-gradient(90% 50% at 0% 100%,rgba(124,58,237,.45),transparent 65%),linear-gradient(180deg,#0B1424,#101B35)}
-#splash svg{width:58px;height:54px;color:#F3F6FA;margin-bottom:48px;margin-top:-40px}
+#splash{justify-content:space-between;padding-top:calc(13vh + env(safe-area-inset-top,0px));padding-bottom:calc(9vh + env(safe-area-inset-bottom,0px))}
+#splash .sp-top{display:flex;flex-direction:column;align-items:center;gap:14px}
+#splash svg{width:60px;height:55px;color:#F3F6FA}
+#splash .sp-name{font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;font-weight:700;font-size:1.3rem;letter-spacing:.01em}
+#splash .sp-mid{display:flex;flex-direction:column;align-items:center;gap:20px;opacity:0;transition:opacity .35s}
+#splash.ready .sp-mid{opacity:1}
+#splash .dua{line-height:2.35 !important;font-size:1.38rem}
 #splash .bism{font-family:var(--f-display);font-size:1.15rem;opacity:.85}
 #splash .dua{font-size:1.45rem;line-height:1.9;max-width:520px;font-weight:600}
 #splash .src{font-size:.82rem;opacity:.65}
@@ -522,6 +531,19 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 @media (prefers-reduced-motion:no-preference){:is(.kpi .val,.kpi .foot,.alt-cur,.sumgrid b,.amt,.owed,.jrem,.jmoney,.mgrid b,.pays .a,.pays .hint,.months b,.zk b,.rem-line b,.mv){transition:filter .2s}}
 .today li.is-late{background:var(--bad-soft)}
 .today li .btn.sm{flex:none}
+.qr{width:220px;max-width:100%;aspect-ratio:1;background:#fff;border-radius:14px;padding:8px;align-self:center}
+.qr svg{width:100%;height:100%;display:block}
+.pair{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.pair ol{margin:0;padding-inline-start:20px;font-size:.88rem;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.lk{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;counter-reset:lk}
+.lk-step{counter-increment:lk;position:relative;padding:10px 12px 10px 12px;padding-inline-start:46px;border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:6px}
+.lk-step::before{content:counter(lk);position:absolute;inset-inline-start:12px;top:10px;width:24px;height:24px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-size:.8rem;font-weight:600;color:var(--muted)}
+.lk-step.on{border-color:#3B82F6;background:var(--grad-soft)}
+.lk-step.on::before{background:var(--grad);color:#fff}
+.lk-step.done::before{content:"✓";background:var(--ok-soft);color:var(--ok)}
+.scan-box{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:1;max-width:340px;width:100%;align-self:center}
+.scan-box video{width:100%;height:100%;object-fit:cover;display:block}
+.scan-box i{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
 .rem-line{font-size:.9rem;color:var(--muted);margin-top:-4px}
 .rem-line b{color:var(--owed);font-weight:600}
 /* v3: slim WhatsApp bar, labelled hide button, second currency */
@@ -594,10 +616,12 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M5.6 18.4l1.6-1.6M16.8 7.2l1.6-1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol></svg>
 
 <div id="splash" role="dialog" aria-label="بسم الله">
-  <svg><use href="#i-reg"/></svg>
-  <div class="bism">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
-  <div class="dua" id="spDua"></div>
-  <div class="src" id="spSrc"></div>
+  <div class="sp-top"><svg><use href="#i-reg"/></svg><div class="sp-name">دفتر المصمم</div></div>
+  <div class="sp-mid">
+    <div class="bism">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
+    <div class="dua" id="spDua"></div>
+    <div class="src" id="spSrc"></div>
+  </div>
   <div class="bar"><i></i></div>
 </div>
 <script>
@@ -606,7 +630,9 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 ["اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ، وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ","رواه الترمذي"],
 ["﴿رَبِّ اشْرَحْ لِي صَدْرِي ۝ وَيَسِّرْ لِي أَمْرِي﴾","سورة طه: 25-26"],
 ["﴿حَسْبِيَ اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ ۖ عَلَيْهِ تَوَكَّلْتُ ۖ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ﴾","سورة التوبة: 129"]];
-var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").textContent=D[i][0];document.getElementById("spSrc").textContent=D[i][1];})();
+var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").textContent=D[i][0];document.getElementById("spSrc").textContent=D[i][1];
+var sp=document.getElementById("splash"),ok=function(){sp.classList.add("ready")};
+try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.fonts.load('700 1em "IBM Plex Sans Arabic"')]).then(ok,ok)}catch(e){ok()}setTimeout(ok,500);})();
 </script>
 <div id="lock" aria-label="التطبيق مقفول"></div>
 <div id="praise" hidden aria-live="polite"><b>الحمد لله</b><span id="praiseSub"></span></div>
@@ -712,11 +738,23 @@ var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").tex
   </form>
 </dialog>
 
+<dialog class="wizard" id="scanDlg" aria-labelledby="scTitle">
+  <div class="wz">
+    <div class="wz-h" style="padding-bottom:4px"><div class="row"><h2 id="scTitle">ربط بجهاز موجود</h2><button class="btn ghost sm" type="button" id="scanClose" aria-label="إغلاق"><svg><use href="#i-x"/></svg></button></div></div>
+    <div class="wz-b">
+      <p class="note" id="scanMsg"></p>
+      <div class="scan-box"><video id="scanVideo" playsinline muted></video><i></i></div>
+      <label class="f">أو الصق كود الربط<input id="scanCode" dir="ltr" autocomplete="off" placeholder="https://…#pair=…"></label>
+      <div class="row-btns"><button class="btn primary sm" type="button" id="scanPaste">اربط</button></div>
+    </div>
+  </div>
+</dialog>
+
 <dialog class="wadlg" id="waDlg" aria-labelledby="waTitle"><div class="wz" id="wa"></div></dialog>
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="parser.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

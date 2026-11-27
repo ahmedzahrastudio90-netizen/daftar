@@ -23,23 +23,24 @@ function doPost(e) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const data = sheet_(ss, "_data", true);
     const last = data.getLastRow();
-    const rows = last > 1 ? data.getRange(2, 1, last - 1, 3).getValues() : [];
+    const rows = last > 1 ? data.getRange(2, 1, last - 1, 4).getValues() : [];
     const map = {};
-    rows.forEach((r) => { if (r[0]) map[r[0]] = { updatedAt: Number(r[1]) || 0, json: String(r[2]) }; });
+    rows.forEach((r) => { if (r[0]) map[r[0]] = { updatedAt: Number(r[1]) || 0, json: String(r[2]), at: Number(r[3]) || 0 }; });
+    const now = Date.now();
 
     const changes = Array.isArray(req.changes) ? req.changes : [];
     let changed = false;
     changes.forEach((j) => {
       if (!j || typeof j.id !== "string") return;
       const cur = map[j.id];
-      if (!cur || (Number(j.updatedAt) || 0) >= cur.updatedAt) { map[j.id] = { updatedAt: Number(j.updatedAt) || 0, json: JSON.stringify(j) }; changed = true; }
+      if (!cur || (Number(j.updatedAt) || 0) >= cur.updatedAt) { map[j.id] = { updatedAt: Number(j.updatedAt) || 0, json: JSON.stringify(j), at: now }; changed = true; }
     });
 
     const ids = Object.keys(map);
     if (changed) {
       data.clearContents();
-      data.getRange(1, 1, 1, 3).setValues([["id", "updatedAt", "json"]]);
-      if (ids.length) data.getRange(2, 1, ids.length, 3).setValues(ids.map((id) => [id, map[id].updatedAt, map[id].json]));
+      data.getRange(1, 1, 1, 4).setValues([["id", "updatedAt", "json", "savedAt"]]);
+      if (ids.length) data.getRange(2, 1, ids.length, 4).setValues(ids.map((id) => [id, map[id].updatedAt, map[id].json, map[id].at]));
     }
     const jobs = ids.map((id) => JSON.parse(map[id].json));
     if (changed) {
@@ -47,7 +48,10 @@ function doPost(e) {
       writeExpenses_(ss, jobs.filter((j) => !j.deleted && j.kind === "expense"), req.currency);
       try { syncCalendar_(jobs.filter((j) => !j.kind), Number(req.remindDays) || 3); } catch (err) { console.warn(err); }
     }
-    return out({ ok: true, jobs: jobs });
+    // only what changed since this device last asked (everything on first sync)
+    const since = Number(req.since) || 0;
+    const fresh = since ? ids.filter((id) => map[id].at > since).map((id) => JSON.parse(map[id].json)) : jobs;
+    return out({ ok: true, jobs: fresh, now: now });
   } finally {
     lock.releaseLock();
   }

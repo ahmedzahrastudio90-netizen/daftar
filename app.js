@@ -186,23 +186,25 @@
 
   // ---------- Google Sheet sync ----------
   let syncing = false, syncErr = "", syncTimer = null;
-  function scheduleSync(ms){ clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms ?? 1500); }
+  function scheduleSync(ms){ clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms ?? 700); }
   async function sync(manual){
     if (!settings.sheetUrl){ if (manual) toast("أدخل رابط الشيت أولاً"); return; }
     if (!navigator.onLine){ syncErr = ""; renderSync(); if (manual) toast("لا يوجد اتصال بالإنترنت. التغييرات محفوظة على الجهاز وستُرسل عند عودة الاتصال."); return; }
     if (syncing) return;
-    syncing = true; renderSync();
+    syncing = true; renderSync(); let pulled = false;
     const changes = Object.values(all).filter(j => j.dirty).map(j => { const c = {...j}; delete c.dirty; return c; });
     try {
-      const res = await fetch(settings.sheetUrl, {method:"POST", body: JSON.stringify({token: settings.token, action:"sync", changes, currency: settings.currency, remindDays: settings.remindDays})});
+      const res = await fetch(settings.sheetUrl, {method:"POST", body: JSON.stringify({token: settings.token, action:"sync", changes, since: n(settings.syncCursor), currency: settings.currency, remindDays: settings.remindDays})});
       const out = await res.json();
       if (!out || !out.ok) throw new Error(out && out.error === "token" ? "token" : "bad");
       const sent = Object.fromEntries(changes.map(c => [c.id, c.updatedAt]));
       for (const sj of out.jobs || []){
         if (!sj || typeof sj.id !== "string") continue;
         const lj = all[sj.id];
-        if (!lj || (!lj.dirty && n(sj.updatedAt) >= n(lj.updatedAt)) || (lj.dirty && n(sj.updatedAt) > n(lj.updatedAt))) all[sj.id] = {...sj};
+        if (lj && n(sj.updatedAt) === n(lj.updatedAt)) continue;
+        if (!lj || (!lj.dirty && n(sj.updatedAt) >= n(lj.updatedAt)) || (lj.dirty && n(sj.updatedAt) > n(lj.updatedAt))){ all[sj.id] = {...sj}; pulled = true; }
       }
+      if (out.now) settings.syncCursor = out.now;
       for (const [id, ts] of Object.entries(sent)) if (all[id] && all[id].updatedAt === ts) delete all[id].dirty;
       settings.lastSync = Date.now(); saveSettings(); syncErr = "";
       persist(); refreshJobs();
@@ -210,12 +212,13 @@
     } catch(e){
       syncErr = e && e.message === "token" ? "كلمة المرور غير صحيحة" : "تعذّر الاتصال بالشيت";
       if (manual) toast(syncErr === "كلمة المرور غير صحيحة" ? "كلمة المرور لا تطابق المسجّلة في الشيت" : "تعذّر الاتصال بالشيت. تأكد من الرابط.");
-    } finally { syncing = false; render(); }
+    } finally { syncing = false; if (pulled || manual) render(); else renderSync(); }
   }
   window.addEventListener("online", () => { renderSync(); scheduleSync(300); fetchRates(); });
   window.addEventListener("offline", renderSync);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleSync(300); });
-  setInterval(() => { if (!document.hidden) sync(); }, 120000);
+  // while the app is open, check for changes from your other devices every 10 seconds
+  setInterval(() => { if (!document.hidden && settings.sheetUrl && !syncing) sync(); }, 10000);
 
   function syncState(){
     const pending = Object.values(all).some(j=>j.dirty);
@@ -437,7 +440,7 @@
   }
   function viewHome(){
     if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
-    return [waCard(), installCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards()];
+    return [waCard(), installCard(), linkCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards()];
   }
 
   // ---------- accounts ----------
@@ -693,29 +696,7 @@
     const last = settings.lastBackup; const age = last ? -daysUntil(last) : null;
     const fileIn = h("input",{type:"file",id:"bkFile",accept:".json,application/json",hidden:true,onchange:e=>{ if (e.target.files[0]) readBackup(e.target.files[0]); e.target.value=""; }});
     return [h("div",{class:"sets"},
-      h("section",{class:"panel"},
-        h("div",{class:"panel-h"}, h("h2",null,"الربط بشيت جوجل"), h("span",{class:"cd " + (st.c==="ok"?"c-done":st.c==="err"?"c-late":"c-ok")}, st.t)),
-        h("div",null,
-          h("p",null,"يعمل الدفتر بدون إنترنت ويحفظ البيانات على الجهاز. عند ربطه بشيت جوجل تُرسل كل التعديلات تلقائياً عند توفر الاتصال، ويمكنك فتح نفس البيانات من أي جهاز أو تنزيلها كملف Excel."),
-          h("label",{class:"f"},"رابط الشيت (Web App URL)", h("input",{id:"sUrl",type:"url",dir:"ltr",placeholder:"https://script.google.com/macros/s/…/exec",value:settings.sheetUrl})),
-          h("label",{class:"f"},"كلمة المرور المسجّلة في الشيت", h("input",{id:"sTok",type:"password",dir:"ltr",value:settings.token,autocomplete:"off"})),
-          h("div",{class:"row-btns"},
-            h("button",{class:"btn primary",type:"button",onclick:()=>{
-              const u = $("sUrl").value.trim();
-              if (u && !/^https:\/\/script\.google(usercontent)?\.com\//.test(u)){ toast("يجب أن يبدأ الرابط بـ https://script.google.com"); return; }
-              settings.sheetUrl = u; settings.token = $("sTok").value.trim(); saveSettings();
-              if (u){ for (const j of Object.values(all)) j.dirty = true; persist(); sync(true); } else { toast("تم إلغاء الربط"); render(); }
-            }}, settings.sheetUrl ? "حفظ ومزامنة" : "ربط بالشيت"),
-            settings.sheetUrl ? h("button",{class:"btn",type:"button",onclick:()=>sync(true)},"مزامنة الآن") : null),
-          settings.lastSync ? h("p",{class:"hint"}, "آخر مزامنة: " + new Date(settings.lastSync).toLocaleString("ar-EG",{dateStyle:"medium",timeStyle:"short"})) : null,
-          h("details",{class:"more"}, h("summary",null,"طريقة إعداد الشيت (مرة واحدة، 3 دقائق)"),
-            h("ol",{style:"margin-top:10px"},
-              h("li",null,"افتح ", h("b",null,"sheets.new"), " وأنشئ شيتاً جديداً باسم «دفتر المصمم»."),
-              h("li",null,"من القائمة: Extensions ← Apps Script."),
-              h("li",null,"احذف المحتوى الموجود والصق محتوى ملف ", h("code",{class:"k"},"google-sheet-script.gs"), " المرفق مع التطبيق، وغيّر كلمة المرور في السطر الأول."),
-              h("li",null,"Deploy ← New deployment ← النوع Web app ← Execute as: Me ← Who has access: Anyone ← Deploy، ووافق على الصلاحيات."),
-              h("li",null,"انسخ رابط الـ Web app والصقه هنا مع كلمة المرور، ثم اضغط «ربط بالشيت».")))
-        )),
+      linkPanel(),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"عام")),
         h("div",null,
@@ -1147,6 +1128,124 @@
       h("button",{class:"btn ghost sm",type:"button","aria-label":"إلغاء",onclick:()=>{ calMenu = ""; renderSheet(); }}, icon("i-x")));
   }
 
+  // ---------- link my devices (your own Google Sheet in the middle; pair other devices with a QR) ----------
+  const lk = {step:0, token:"", showQR:false, url:""};
+  const scriptLoads = {};
+  const loadScript = (src) => scriptLoads[src] || (scriptLoads[src] = new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = src; sc.onload = res; sc.onerror = () => { delete scriptLoads[src]; rej(); }; document.head.append(sc); }));
+  const b64url = (str) => btoa(unescape(encodeURIComponent(str))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const unb64url = (str) => decodeURIComponent(escape(atob(str.replace(/-/g,"+").replace(/_/g,"/"))));
+  const pairLink = () => location.origin + location.pathname + "#pair=" + b64url(JSON.stringify({u:settings.sheetUrl, t:settings.token}));
+  function connect(url, token, msg){
+    settings.sheetUrl = url; settings.token = token; settings.syncCursor = 0; saveSettings();
+    for (const j of Object.values(all)) j.dirty = true; persist();
+    lk.step = 0; lk.showQR = false;
+    sync(true).then(() => { if (!syncErr) toast(msg || "تم الربط ✓"); render(); });
+  }
+  function applyPair(code){
+    try {
+      const raw = String(code).trim(), m = raw.match(/pair=([A-Za-z0-9_-]+)/), data = JSON.parse(unb64url(m ? m[1] : raw));
+      if (!data.u || !/^https:\/\/script\.google(usercontent)?\.com\//.test(data.u)) throw 0;
+      connect(data.u, data.t || "", "تم ربط الجهاز ✓ وبياناتك بتنزل دلوقتي");
+      return true;
+    } catch(e){ toast("الكود ده مش كود ربط من دفتر المصمم"); return false; }
+  }
+  async function copyScript(){
+    if (!lk.token) lk.token = b64u(crypto.getRandomValues(new Uint8Array(18)));
+    try {
+      const txt = (await (await fetch("google-sheet-script.gs", {cache:"no-cache"})).text()).replace(/const TOKEN = ".*?";/, 'const TOKEN = "' + lk.token + '";');
+      await navigator.clipboard.writeText(txt); toast("تم نسخ الكود ✓"); lk.step = Math.max(lk.step, 4); render();
+    } catch(e){ toast("محتاج نت علشان أنسخ الكود"); }
+  }
+  async function renderQR(el){
+    try { await loadScript("lib/qrcode.js"); const q = qrcode(0, "M"); q.addData(pairLink()); q.make(); el.innerHTML = q.createSvgTag({cellSize:5, margin:3, scalable:true}); }
+    catch(e){ el.textContent = "تعذّر عرض الكود"; }
+  }
+  function linkPanel(){
+    const st = syncState();
+    const head = h("div",{class:"panel-h"}, h("h2",null,"ربط أجهزتي"), settings.sheetUrl ? h("span",{class:"cd " + (st.c==="ok"?"c-done":st.c==="err"?"c-late":"c-ok")}, st.t) : null);
+    if (settings.sheetUrl){
+      const qrBox = h("div",{class:"qr"}); if (lk.showQR) renderQR(qrBox);
+      return h("section",{class:"panel"}, head, h("div",null,
+        h("p",null,"✓ الجهاز ده مربوط. أي تعديل بيظهر على كل أجهزتك خلال ثواني."),
+        lk.showQR ? h("div",{class:"pair"}, qrBox,
+            h("ol",null, h("li",null,"افتح دفتر المصمم على الجهاز التاني."), h("li",null,"الإعدادات ← «ربط بجهاز موجود»."), h("li",null,"امسح الكود ده، أو امسحه بكاميرا التليفون.")),
+            h("div",{class:"row-btns"},
+              h("button",{class:"btn sm",type:"button",onclick:async()=>{ try { await navigator.clipboard.writeText(pairLink()); toast("تم نسخ كود الربط"); } catch(e){ toast("انسخه يدوياً"); } }},"نسخ كود الربط"),
+              h("button",{class:"btn sm ghost",type:"button",onclick:()=>{lk.showQR=false;render();}},"إخفاء")),
+            h("p",{class:"note"},"الكود ده بيفتح بياناتك، فمتبعتهوش لحد غيرك."))
+          : h("div",{class:"row-btns"},
+              h("button",{class:"btn primary",type:"button",onclick:()=>{lk.showQR=true;render();}}, "ربط جهاز جديد"),
+              h("button",{class:"btn",type:"button",onclick:()=>sync(true)},"مزامنة الآن")),
+        settings.lastSync ? h("p",{class:"hint"}, "آخر مزامنة: " + new Date(settings.lastSync).toLocaleString("ar-EG",{dateStyle:"medium",timeStyle:"short"})) : null,
+        h("details",{class:"more"}, h("summary",null,"فك ربط الجهاز ده"),
+          h("p",{class:"note"},"بياناتك هتفضل على الجهاز ده وفي الشيت، بس التعديلات مش هتتزامن تاني."),
+          h("button",{class:"btn sm ghost danger",type:"button",onclick:()=>{ settings.sheetUrl=""; settings.token=""; settings.syncCursor=0; saveSettings(); toast("تم فك الربط"); render(); }},"فك الربط"))));
+    }
+    if (!lk.step) return h("section",{class:"panel"}, head, h("div",null,
+      h("p",null,"اربط تليفونك والكمبيوتر مرة واحدة، وأي حاجة تضيفها أو تعدّلها في أي مكان تظهر على الكل خلال ثواني. البيانات بتتحفظ في حسابك على جوجل، محدش غيرك يقدر يشوفها."),
+      h("div",{class:"row-btns"},
+        h("button",{class:"btn primary",type:"button",onclick:()=>{lk.step=1;render();}},"أول جهاز: ابدأ الربط"),
+        h("button",{class:"btn",type:"button",onclick:openScan}, "ربط بجهاز موجود"))));
+    const stepRow = (k, title, body) => h("li",{class:"lk-step" + (lk.step > k ? " done" : lk.step === k ? " on" : "")}, h("b",null, title), body);
+    return h("section",{class:"panel"}, head, h("div",null,
+      h("p",{class:"note"},"خطوات مرة واحدة بس (حوالي 3 دقايق). خلّيك مسجّل دخول بحساب جوجل."),
+      h("ol",{class:"lk"},
+        stepRow(1, "افتح شيت جديد", h("div",{class:"row-btns"}, h("a",{class:"btn sm",href:"https://sheets.new",target:"_blank",rel:"noopener",onclick:()=>{lk.step=Math.max(lk.step,2);setTimeout(render,300);}},"افتح Google Sheets"))),
+        stepRow(2, "من القايمة فوق: Extensions ← Apps Script", h("span",{class:"note"},"بالعربي: الإضافات ← Apps Script. هتفتح صفحة فيها كود.")),
+        stepRow(3, "انسخ الكود والصقه هناك", h("div",null, h("div",{class:"row-btns"}, h("button",{class:"btn sm primary",type:"button",onclick:copyScript},"انسخ الكود")),
+          h("span",{class:"note"},"امسح كل اللي مكتوب في الصفحة، والصق الكود، واضغط حفظ 💾."))),
+        stepRow(4, "انشره", h("span",{class:"note"},"اضغط Deploy ← New deployment ← اختار Web app ← خلي Who has access: Anyone ← Deploy. وافق على الصلاحيات، ولو ظهر تحذير اضغط Advanced ← Go to … (unsafe)، ده طبيعي لأنه كودك إنت.")),
+        stepRow(5, "الصق الرابط هنا", h("div",null,
+          h("input",{id:"lkUrl",type:"url",dir:"ltr",class:"search",style:"width:100%",placeholder:"https://script.google.com/macros/s/…/exec",value:lk.url,oninput:e=>{lk.url=e.target.value;}}),
+          h("div",{class:"row-btns",style:"margin-top:8px"},
+            h("button",{class:"btn primary",type:"button",onclick:()=>{
+              const u = (lk.url||"").trim();
+              if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(u)){ toast("الرابط لازم يبدأ بـ https://script.google.com"); return; }
+              if (!lk.token){ toast("انسخ الكود الأول من الخطوة 3"); return; }
+              connect(u, lk.token, "تم الربط ✓ دلوقتي اربط أجهزتك التانية بالـ QR");
+              lk.showQR = true;
+            }},"اربط"),
+            h("button",{class:"btn ghost",type:"button",onclick:()=>{lk.step=0;render();}},"إلغاء"))))),
+    ));
+  }
+  // scanner: BarcodeDetector where available, jsQR elsewhere; manual paste as a fallback
+  let scanStream = null, scanTimer = null;
+  async function openScan(){
+    const d = $("scanDlg");
+    $("scanMsg").textContent = "وجّه الكاميرا على كود الربط اللي على الجهاز التاني";
+    openDlg(d);
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}, audio:false});
+      const v = $("scanVideo"); v.srcObject = scanStream; await v.play();
+      let detector = null;
+      try { if ("BarcodeDetector" in window && (await BarcodeDetector.getSupportedFormats()).includes("qr_code")) detector = new BarcodeDetector({formats:["qr_code"]}); } catch(e){}
+      if (!detector) await loadScript("lib/jsQR.js");
+      const cv = document.createElement("canvas"), cx = cv.getContext("2d", {willReadFrequently:true});
+      const tick = async () => {
+        if (!d.open) return;
+        let text = "";
+        try {
+          if (detector){ const r = await detector.detect(v); if (r[0]) text = r[0].rawValue; }
+          else if (v.videoWidth){ cv.width = v.videoWidth; cv.height = v.videoHeight; cx.drawImage(v, 0, 0); const img = cx.getImageData(0, 0, cv.width, cv.height); const r = jsQR(img.data, img.width, img.height); if (r) text = r.data; }
+        } catch(e){}
+        if (text && text.includes("pair=")){ d.close(); applyPair(text); return; }
+        scanTimer = setTimeout(tick, 250);
+      };
+      tick();
+    } catch(e){ $("scanMsg").textContent = "مقدرتش أفتح الكاميرا. الصق كود الربط تحت بدلها."; }
+  }
+  $("scanDlg").addEventListener("close", () => { clearTimeout(scanTimer); if (scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; } });
+  $("scanClose").onclick = () => $("scanDlg").close();
+  $("scanPaste").onclick = () => { const v = $("scanCode").value; if (v && applyPair(v)) $("scanDlg").close(); };
+  function linkCard(){
+    if (settings.sheetUrl || LS.get("ledger.hideLink", false) || !(jobs.length || expenses.length)) return null;
+    return h("div",{class:"wa-card",style:"background:var(--grad-soft),var(--card)"},
+      h("span",{class:"ic",style:"background:var(--grad);color:#fff"}, icon("i-reg")),
+      h("div",{class:"tx"}, h("b",null,"اربط تليفونك والكمبيوتر"), h("span",null,"مرة واحدة، وأي تعديل يظهر على الكل خلال ثواني.")),
+      h("button",{class:"btn primary sm",type:"button",onclick:()=>go("settings")},"اربط"),
+      h("button",{class:"btn ghost sm",type:"button","aria-label":"إخفاء",onclick:()=>{ LS.set("ledger.hideLink", true); render(); }}, icon("i-x")));
+  }
+
   // ---------- WhatsApp ----------
   const wa = {text:"", result:null, created:{}, timer:null};
   function openWa(text){
@@ -1468,6 +1567,7 @@
     navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded && !document.querySelector("dialog[open]")){ reloaded = true; location.reload(); } });
     navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(()=>{});
   }
+  if (location.hash.startsWith("#pair=")){ const code = location.hash; try { history.replaceState(null, "", location.pathname + "#home"); } catch(e){} setTimeout(() => applyPair(code), 300); }
   if (isLocked()){ if (settings.lock && settings.lock.on) renderLock(); else document.documentElement.removeAttribute("data-locked"); }
   render();
   runSplash();
