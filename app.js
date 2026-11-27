@@ -1129,6 +1129,24 @@
     saveJ(j, nx, m.done ? "تم الحفظ ✓" : "تم الاجتماع ✓");
   }
   const meetCheck = (j, m) => h("button",{class:"chk" + (m.done ? " on" : ""),type:"button","aria-pressed":String(!!m.done),title:m.done ? "تم" : "علّم إنه تم","aria-label":"تم الاجتماع",onclick:()=>meetDone(j, m)}, m.done ? "✓" : "");
+  let meetEdit = "";
+  // edit a meeting in place: tap ✎, change anything, save
+  function meetEditForm(j, m){
+    return h("form",{class:"mini meet-edit",onsubmit:e=>{
+        e.preventDefault();
+        const nx = bodyOf(j);
+        nx.meetings = meetingsOf(j).map(x => x.id !== m.id ? x : {...x, title:$("meT").value.trim() || "اجتماع", date:$("meD").value || x.date, time:$("meH").value || "", notes:$("meN").value.trim()});
+        meetEdit = ""; saveJ(j, nx, "تم تعديل الاجتماع ✓");
+      }},
+      h("label",{class:"f full"},"العنوان", h("input",{id:"meT",value:m.title || ""})),
+      h("label",{class:"f"},"اليوم", h("input",{id:"meD",type:"date",value:m.date || todayStr()})),
+      h("label",{class:"f"},"الساعة", h("input",{id:"meH",type:"time",value:m.time || ""})),
+      h("label",{class:"f full"},"تفاصيل", h("textarea",{id:"meN",rows:"2",placeholder:"المكان، اللينك، اللي هتعرضه…"}, m.notes || "")),
+      h("div",{class:"full",style:"display:flex;gap:8px"},
+        h("button",{class:"btn primary sm",type:"submit"},"حفظ التعديل"),
+        h("button",{class:"btn sm",type:"button",onclick:()=>{meetEdit="";renderSheet();}},"إلغاء")));
+  }
+  const meetEditBtn = (m, at) => h("button",{class:"btn ghost sm icon-only",type:"button","aria-label":"تعديل الاجتماع",title:"تعديل",onclick:()=>{ meetEdit = at + ":" + m.id; renderSheet(); setTimeout(()=>$("meT")?.focus(),30); }}, icon("i-edit"));
   function stagesBlock(j){
     const list = phasesOf(j), meets = meetingsOf(j);
     const doneN = list.filter(p => p.done).length;
@@ -1156,9 +1174,9 @@
               h("div",{class:"hint"}, (p.start ? dshort(p.start) + " ← " : "حتى ") + dshort(p.due) + (st !== "done" && p.due && daysUntil(p.due) < 0 ? " · متأخرة" : st === "done" && p.doneDate ? " · خلصت " + dshort(p.doneDate) : ""))),
             st !== "done" && p.due && daysUntil(p.due) >= 0 ? calButton(deliveryEvent(j, p), "") : null),
           h("div",{class:"seg sg-seg",role:"group","aria-label":"حالة المرحلة"}, ...["todo","doing","done"].map(k => h("button",{type:"button","aria-pressed":String(st===k),onclick:()=>setStage(j, i, k)}, STAGE[k].t))),
-          pm.length ? h("ul",{class:"sg-meet"}, ...pm.map(m => h("li",{class:m.done ? "done" : ""}, meetCheck(j, m),
-            h("span",{class:"grow"}, (m.title || "اجتماع") + " · " + (m.done ? "تم ✓" : relDay(m.date) + (m.time ? " " + fmtTime(m.time) : ""))),
-            !m.done && daysUntil(m.date) >= 0 ? calButton(meetingEvent(j, m), "") : null))) : null,
+          pm.length ? h("ul",{class:"sg-meet"}, ...pm.map(m => "s:" + m.id === meetEdit ? h("li",{class:"editing"}, meetEditForm(j, m)) : h("li",{class:m.done ? "done" : ""}, meetCheck(j, m),
+            h("span",{class:"grow"}, (m.title || "اجتماع") + " · " + (m.done ? "تم ✓" : relDay(m.date) + (m.time ? " " + fmtTime(m.time) : "")), m.notes ? h("small",{class:"m-notes"}, m.notes) : null),
+            !m.done && daysUntil(m.date) >= 0 ? calButton(meetingEvent(j, m), "") : null, meetEditBtn(m, "s")))) : null,
           stageMeet === p.id ? h("form",{class:"mini",onsubmit:e=>{
               e.preventDefault();
               const m = {id:newId(), phaseId:p.id, title:"عرض «" + (p.title||"المرحلة") + "» على " + (j.client||"العميل"), date:$("smDate").value || todayStr(), time:$("smTime").value || ""};
@@ -1176,7 +1194,7 @@
   }
   let sheetId = null, confirmDel = false, payDraft = null;
   let meetDraft = null, payOpen = false, justMeet = "";
-  function openSheet(id){ sheetId = id; stageAdd = null; stageMeet = null; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; justMeet = ""; calMenu = ""; renderSheet(); openDlg($("sheetDlg")); }
+  function openSheet(id){ sheetId = id; meetEdit = ""; stageAdd = null; stageMeet = null; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; justMeet = ""; calMenu = ""; renderSheet(); openDlg($("sheetDlg")); }
   function praise(sub, fw){
     const p = $("praise"); topHost().appendChild(p); $("praiseSub").textContent = sub || "";
     p.hidden = true; void p.offsetWidth; p.hidden = false;
@@ -1273,9 +1291,10 @@
         h("div",{class:"blk"},
           h("div",{style:"display:flex;align-items:center;gap:8px"}, h("h3",{style:"margin:0;flex:1"},"الاجتماعات"),
             !meetDraft ? h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>{meetDraft={title:"اجتماع مع " + (j.client||"العميل"), date:todayStr(), time:"12:00"}; renderSheet(); setTimeout(()=>$("mTitle")?.focus(),30);}}, icon("i-plus"), "اجتماع") : null),
-          meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => h("li",{class:m.done ? "done" : ""},
-            meetCheck(j, m), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : "") + (m.done ? " · تم ✓" : !m.done && daysUntil(m.date) < 0 ? " · علّم عليه لو تم" : ""))),
-            !m.done && daysUntil(m.date) >= 0 && m.id !== justMeet ? calButton(meetingEvent(j, m), "للتقويم") : null,
+          meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => "g:" + m.id === meetEdit ? h("li",{class:"editing"}, meetEditForm(j, m)) : h("li",{class:m.done ? "done" : ""},
+            meetCheck(j, m), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : "") + (m.done ? " · تم ✓" : !m.done && daysUntil(m.date) < 0 ? " · علّم عليه لو تم" : "")), m.notes ? h("div",{class:"m-notes"}, m.notes) : null),
+            !m.done && daysUntil(m.date) >= 0 && m.id !== justMeet ? calButton(meetingEvent(j, m), "") : null,
+            meetEditBtn(m, "g"),
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الاجتماع",onclick:()=>{ const nx = bodyOf(j); nx.meetings = meetingsOf(j).filter(x=>x.id!==m.id); save(nx,"تم حذف الاجتماع"); }}, icon("i-x"))))) : (!meetDraft ? h("div",{class:"hint",style:"margin-top:4px"},"لا توجد اجتماعات.") : null),
           justMeet && meetingsOf(j).some(m => m.id === justMeet) ? h("div",{class:"cal-tip"},
             h("div",null, h("b",null,"خلّي موبايلك يفكّرك"), h("span",null,"أضفه لتقويمك، فيجيلك تنبيه قبله بنص ساعة حتى لو التطبيق مقفول.")),
@@ -1283,7 +1302,7 @@
             h("button",{class:"btn ghost sm",type:"button","aria-label":"إغلاق",onclick:()=>{ justMeet = ""; renderSheet(); }}, icon("i-x"))) : null,
           meetDraft ? h("form",{class:"mini",onsubmit:e=>{
               e.preventDefault();
-              const m = {id:newId(), title:$("mTitle").value.trim() || "اجتماع", date:$("mDate").value || todayStr(), time:$("mTime").value || ""};
+              const m = {id:newId(), title:$("mTitle").value.trim() || "اجتماع", date:$("mDate").value || todayStr(), time:$("mTime").value || "", notes:($("mNotes")?.value || "").trim()};
               const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m]; meetDraft = null;
               justMeet = m.id;
               save(nx, "تم حفظ الاجتماع ✓");
@@ -1292,6 +1311,7 @@
             h("label",{class:"f full"},"العنوان", h("input",{id:"mTitle",value:meetDraft.title,oninput:e=>{meetDraft.title=e.target.value;}})),
             h("label",{class:"f"},"اليوم", h("input",{id:"mDate",type:"date",value:meetDraft.date,oninput:e=>{meetDraft.date=e.target.value;}})),
             h("label",{class:"f"},"الساعة", h("input",{id:"mTime",type:"time",value:meetDraft.time,oninput:e=>{meetDraft.time=e.target.value;}})),
+            h("label",{class:"f full"},"تفاصيل (اختياري)", h("textarea",{id:"mNotes",rows:"2",placeholder:"المكان، اللينك، اللي هتعرضه…",oninput:e=>{meetDraft.notes=e.target.value;}}, meetDraft.notes || "")),
             h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary sm",type:"submit"},"حفظ"), h("button",{class:"btn sm",type:"button",onclick:()=>{meetDraft=null;renderSheet();}},"إلغاء"))) : null),
         h("div",{class:"blk"}, h("h3",null,"الحالة"),
           h("div",{class:"picks"}, ...Object.entries(STATUS).map(([k,v]) => h("button",{class:"pick",type:"button","aria-pressed":String(j.status===k),onclick:()=>setStatus(k)}, v.t)))),
@@ -1332,7 +1352,7 @@
   }
   function meetingEvent(j, m){
     return {key:"m-" + m.id, title:(m.title || "اجتماع") + (j.client && !(m.title||"").includes(j.client) ? " — " + j.client : ""),
-      date:m.date, time:m.time || "10:00", dur:60, alarms:[30], details:"مشروع: " + (j.title || "") + (j.phone ? "\nرقم العميل: " + j.phone : "")};
+      date:m.date, time:m.time || "10:00", dur:60, alarms:[30], details:(m.notes ? m.notes + "\n" : "") + "مشروع: " + (j.title || "") + (j.phone ? "\nرقم العميل: " + j.phone : "")};
   }
   function deliveryEvent(j, p){
     return {key:"d-" + j.id + (p ? "-" + p.id : ""), title:"تسليم" + (p ? " مرحلة «" + (p.title || "") + "»" : "") + ": " + (j.title || "") + (j.client ? " — " + j.client : ""),
