@@ -1,5 +1,5 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v12";
+const VERSION = "ledger-v13";
 const SHELL = ["./", "index.html", "app.js", "parser.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
   "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2"];

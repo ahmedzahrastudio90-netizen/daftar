@@ -952,8 +952,8 @@
 
   // ---------- details sheet ----------
   let sheetId = null, confirmDel = false, payDraft = null;
-  let meetDraft = null, payOpen = false;
-  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; renderSheet(); openDlg($("sheetDlg")); }
+  let meetDraft = null, payOpen = false, justMeet = "";
+  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; justMeet = ""; calMenu = ""; renderSheet(); openDlg($("sheetDlg")); }
   function praise(sub){
     const p = $("praise"); topHost().appendChild(p); $("praiseSub").textContent = sub || "";
     p.hidden = true; void p.offsetWidth; p.hidden = false;
@@ -1031,18 +1031,25 @@
               const nx = bodyOf(j); nx.phases = phasesOf(j).map((q,k) => k===i ? {...q, done:e.target.checked, doneDate:e.target.checked?todayStr():""} : q);
               store.save(j.id, nx); toast(e.target.checked ? "تم الحفظ ✓ مرحلة «" + (p.title||"") + "»" : "تم الحفظ ✓"); }}),
             h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1))), h("div",{class:"hint"}, (p.start ? "من " + dshort(p.start) + " لـ " : "حتى ") + dshort(p.due))),
+            !p.done && daysUntil(p.due) >= 0 ? calButton(deliveryEvent(j, p), "للتقويم") : null,
             h("span",{class:"cd " + (p.done ? "c-done" : daysUntil(p.due) < 0 ? "c-late" : daysUntil(p.due) <= 2 ? "c-soon" : "c-ok")}, p.done ? "تمت" : dshort(p.due)))))) : null,
         h("div",{class:"blk"},
           h("div",{style:"display:flex;align-items:center;gap:8px"}, h("h3",{style:"margin:0;flex:1"},"الاجتماعات"),
             !meetDraft ? h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>{meetDraft={title:"اجتماع مع " + (j.client||"العميل"), date:todayStr(), time:"12:00"}; renderSheet(); setTimeout(()=>$("mTitle")?.focus(),30);}}, icon("i-plus"), "اجتماع") : null),
           meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => h("li",{class:daysUntil(m.date) < 0 ? "done" : ""},
             icon("i-cal"), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : ""))),
+            daysUntil(m.date) >= 0 && m.id !== justMeet ? calButton(meetingEvent(j, m), "للتقويم") : null,
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الاجتماع",onclick:()=>{ const nx = bodyOf(j); nx.meetings = meetingsOf(j).filter(x=>x.id!==m.id); save(nx,"تم حذف الاجتماع"); }}, icon("i-x"))))) : (!meetDraft ? h("div",{class:"hint",style:"margin-top:4px"},"لا توجد اجتماعات.") : null),
+          justMeet && meetingsOf(j).some(m => m.id === justMeet) ? h("div",{class:"cal-tip"},
+            h("div",null, h("b",null,"خلّي موبايلك يفكّرك"), h("span",null,"أضفه لتقويمك، فيجيلك تنبيه قبله بنص ساعة حتى لو التطبيق مقفول.")),
+            calButton({...meetingEvent(j, meetingsOf(j).find(m => m.id === justMeet)), key:"tip-" + justMeet}),
+            h("button",{class:"btn ghost sm",type:"button","aria-label":"إغلاق",onclick:()=>{ justMeet = ""; renderSheet(); }}, icon("i-x"))) : null,
           meetDraft ? h("form",{class:"mini",onsubmit:e=>{
               e.preventDefault();
               const m = {id:newId(), title:$("mTitle").value.trim() || "اجتماع", date:$("mDate").value || todayStr(), time:$("mTime").value || ""};
               const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m]; meetDraft = null;
-              save(nx, "تم حفظ الاجتماع. هنفكّرك قبلها");
+              justMeet = m.id;
+              save(nx, "تم حفظ الاجتماع ✓");
               if ("Notification" in window && Notification.permission === "default") enableNotify();
             }},
             h("label",{class:"f full"},"العنوان", h("input",{id:"mTitle",value:meetDraft.title,oninput:e=>{meetDraft.title=e.target.value;}})),
@@ -1060,7 +1067,7 @@
               wa && rem > 0 && j.status !== "cancel" ? h("a",{class:"btn sm wa",href:"https://wa.me/"+wa+"?text="+encodeURIComponent(remindMsg),target:"_blank",rel:"noopener"},"ذكّر العميل") : null),
             h("span",null,"البدء"), h("span",null, dlong(j.start)),
             h("span",null,"الإنجاز"), h("span",null, dlong(j.finish)),
-            h("span",null, phasesOf(j).length ? "التسليم النهائي" : "التسليم"), h("b",null, dlong(j.due)),
+            h("span",null, phasesOf(j).length ? "التسليم النهائي" : "التسليم"), h("div",{class:"phone"}, h("b",null, dlong(j.due)), isOpen(j) && j.due && daysUntil(j.due) >= 0 ? calButton(deliveryEvent(j), "للتقويم") : null),
             j.status==="done" ? h("span",null,"تم التسليم") : null, j.status==="done" ? h("span",null, dlong(j.delivered)) : null,
             h("span",null,"التعديلات"), h("span",null, j.revisions!==""&&j.revisions!=null ? j.revisions+" متفق عليها" : "—"))),
         j.notes ? h("div",{class:"blk"}, h("h3",null,"ملاحظات"), h("div",{style:"white-space:pre-wrap;overflow-wrap:anywhere;font-size:.92rem"}, j.notes)) : null,
@@ -1075,6 +1082,57 @@
   }
 
   { const _rs = renderSheet; renderSheet = function(){ _rs(); syncDates($("sheet")); }; }
+
+  // ---------- add to the phone/computer calendar (reliable reminders, even when the app is closed) ----------
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isMobile = isAndroid || isIOS;
+  let calMenu = "";
+  const pad2 = (x) => String(x).padStart(2, "0");
+  function calStamp(date, time, addMin){
+    const [y,mo,d] = date.split("-").map(Number), [hh,mm] = (time || "10:00").split(":").map(Number);
+    const t = new Date(y, mo - 1, d, hh, mm + (addMin || 0));
+    return t.getFullYear() + pad2(t.getMonth()+1) + pad2(t.getDate()) + "T" + pad2(t.getHours()) + pad2(t.getMinutes()) + "00";
+  }
+  function meetingEvent(j, m){
+    return {key:"m-" + m.id, title:(m.title || "اجتماع") + (j.client && !(m.title||"").includes(j.client) ? " — " + j.client : ""),
+      date:m.date, time:m.time || "10:00", dur:60, alarms:[30], details:"مشروع: " + (j.title || "") + (j.phone ? "\nرقم العميل: " + j.phone : "")};
+  }
+  function deliveryEvent(j, p){
+    return {key:"d-" + j.id + (p ? "-" + p.id : ""), title:"تسليم" + (p ? " مرحلة «" + (p.title || "") + "»" : "") + ": " + (j.title || "") + (j.client ? " — " + j.client : ""),
+      date:p ? p.due : j.due, time:"10:00", dur:30, alarms:[1440, 0], details:"من دفتر المصمم" + (j.phone ? "\nرقم العميل: " + j.phone : "")};
+  }
+  function googleUrl(ev){
+    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || "Africa/Cairo";
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(ev.title) +
+      "&dates=" + calStamp(ev.date, ev.time) + "/" + calStamp(ev.date, ev.time, ev.dur) + "&details=" + encodeURIComponent(ev.details) + "&ctz=" + encodeURIComponent(tz);
+  }
+  function icsText(ev){
+    const esc = (x) => String(x).replace(/\\/g,"\\\\").replace(/([,;])/g,"\\$1").replace(/\n/g,"\\n");
+    const now = new Date(), stamp = now.getUTCFullYear() + pad2(now.getUTCMonth()+1) + pad2(now.getUTCDate()) + "T" + pad2(now.getUTCHours()) + pad2(now.getUTCMinutes()) + "00Z";
+    return ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Daftar//AR","CALSCALE:GREGORIAN","METHOD:PUBLISH","BEGIN:VEVENT",
+      "UID:" + ev.key + "@daftar","DTSTAMP:" + stamp,"DTSTART:" + calStamp(ev.date, ev.time),"DTEND:" + calStamp(ev.date, ev.time, ev.dur),
+      "SUMMARY:" + esc(ev.title),"DESCRIPTION:" + esc(ev.details),
+      ...ev.alarms.flatMap(a => ["BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:" + esc(ev.title),"TRIGGER:" + (a ? "-PT" + a + "M" : "PT0M"),"END:VALARM"]),
+      "END:VEVENT","END:VCALENDAR"].join("\r\n");
+  }
+  function openGoogle(ev){ const a = h("a",{href:googleUrl(ev),target:"_blank",rel:"noopener"}); document.body.append(a); a.click(); a.remove(); }
+  function saveIcs(ev){
+    const url = URL.createObjectURL(new Blob([icsText(ev)], {type:"text/calendar;charset=utf-8"}));
+    const a = h("a",{href:url,download:"daftar-" + ev.date + ".ics"}); document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  }
+  function calButton(ev, label){
+    if (!ev.date) return null;
+    const txt = label || (isMobile ? "أضف لتقويم موبايلي" : "أضف للتقويم");
+    if (isAndroid) return h("button",{class:"btn sm cal",type:"button",onclick:()=>openGoogle(ev)}, icon("i-cal"), txt);
+    if (isIOS) return h("button",{class:"btn sm cal",type:"button",onclick:()=>{ saveIcs(ev); toast("افتح الملف واضغط «إضافة» في التقويم"); }}, icon("i-cal"), txt);
+    // computer: Google Calendar or a calendar file for Outlook / Mac Calendar
+    if (calMenu !== ev.key) return h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ev.key; renderSheet(); }}, icon("i-cal"), txt);
+    return h("span",{class:"cal-menu"},
+      h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ""; openGoogle(ev); renderSheet(); }}, "Google Calendar"),
+      h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ""; saveIcs(ev); toast("افتح الملف ليُضاف إلى Outlook أو تقويم ماك"); renderSheet(); }}, "Outlook / تقويم ماك"),
+      h("button",{class:"btn ghost sm",type:"button","aria-label":"إلغاء",onclick:()=>{ calMenu = ""; renderSheet(); }}, icon("i-x")));
+  }
 
   // ---------- WhatsApp ----------
   const wa = {text:"", result:null, created:{}, timer:null};
