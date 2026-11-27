@@ -10,7 +10,7 @@
   };
   const CUR = {EGP:"ج.م", USD:"$", SAR:"ر.س", AED:"د.إ", KWD:"د.ك", EUR:"€"};
   const CUR_NAME = {EGP:"جنيه مصري", USD:"دولار", SAR:"ريال سعودي", AED:"درهم إماراتي", KWD:"دينار كويتي", EUR:"يورو"};
-  const TYPES = ["لوجو","هوية بصرية","سوشيال ميديا","مطبوعات","تغليف","UI / UX","موشن","إليستريشن","أخرى"];
+  const TYPES = ["لوجو","هوية بصرية","سوشيال ميديا","مطبوعات","تغليف","تايبوجرافي","استراتيجية","UI / UX","موشن","إليستريشن","أخرى"];
   const VIEWS = [["home","الرئيسية","i-home"],["jobs","المشاريع","i-jobs"],["money","الحسابات","i-pay"],["settings","الإعدادات","i-gear"]];
   const FILTERS = [["active","الجارية"],["late","متأخر"],["unpaid","مستحقات"],["done","مُسلَّمة"],["all","الكل"]];
   const MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
@@ -832,8 +832,18 @@
     if (foreign){ $("lRateT").textContent = "سعر الصرف: 1 " + CUR[wz.cur] + " = " + CUR[settings.currency]; if (!$("fRate").value && rateNow(wz.cur)) $("fRate").value = rateNow(wz.cur); }
     $("typePicks").replaceChildren(...TYPES.map(t => h("button",{type:"button",class:"pick","aria-pressed":String(wz.types.includes(t)),onclick:()=>{wz.types = wz.types.includes(t) ? wz.types.filter(x=>x!==t) : [...wz.types, t]; renderForm();}}, t)));
     renderPhases();
+    updateRemLine();
     syncDates($("wizDlg"));
   }
+  function updateRemLine(){
+    const el = $("remLine"), price = n($("fPrice").value);
+    const paid = wz.id && all[wz.id] ? paidOf(all[wz.id]) : n($("fDeposit").value);
+    if (!$("fPrice").value || !price){ el.hidden = true; return; }
+    el.hidden = false;
+    el.replaceChildren(price - paid > 0 ? "المتبقي على العميل: " : "", price - paid > 0 ? h("b",{class:"num"}, rawFmt(price - paid) + " " + CUR[wz.cur]) : h("b",{class:"num",style:"color:var(--ok)"}, "مدفوع بالكامل ✓"));
+  }
+  $("fPrice").addEventListener("input", updateRemLine);
+  $("fDeposit").addEventListener("input", updateRemLine);
   // phases: each phase starts when the previous one ends
   function phaseDates(){
     let cur = $("fStart").value || todayStr();
