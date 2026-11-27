@@ -548,6 +548,36 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .rem-line b{color:var(--owed);font-weight:600}
 /* v3: slim WhatsApp bar, labelled hide button, second currency */
 .g-btn{gap:10px}.g-logo{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#fff;flex:none}
+.stages{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;counter-reset:none}
+.stage{position:relative;border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--card)}
+.stage:not(:last-child)::after{content:"";position:absolute;inset-inline-start:25px;bottom:-11px;width:2px;height:10px;background:var(--line)}
+.stage.st-doing{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+.stage.st-done{background:color-mix(in srgb,var(--ok) 6%,var(--card))}
+.sg-h{display:flex;align-items:center;gap:10px}
+.sg-h .grow{flex:1;min-width:0}
+.sg-n{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.85rem;flex:none;background:var(--line);color:var(--ink)}
+.st-doing .sg-n{background:var(--grad);color:#fff}
+.st-done .sg-n{background:var(--ok);color:#fff}
+.st-done .sg-h b{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--ok) 60%,transparent)}
+.sg-seg{display:grid;grid-template-columns:repeat(3,1fr)}
+.sg-seg button[aria-pressed=true]{font-weight:600}
+.st-todo .sg-seg button[aria-pressed=true]{background:var(--line);color:var(--ink)}
+.st-doing .sg-seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.st-done .sg-seg button[aria-pressed=true]{background:var(--ok);color:#fff}
+.sg-meet{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.sg-meet li{display:flex;align-items:center;gap:8px;font-size:.85rem;background:color-mix(in srgb,var(--accent) 7%,transparent);border-radius:9px;padding:6px 10px}
+.sg-meet li > svg{width:16px;height:16px;color:var(--accent);flex:none}
+.sg-meet .grow{flex:1;min-width:0}
+.sg-add{align-self:flex-start;color:var(--accent)}
+.sg-notes{width:100%;resize:vertical;min-height:44px;border:1px dashed var(--line);border-radius:9px;padding:8px 10px;font:inherit;font-size:.86rem;background:transparent;color:var(--ink)}
+.sg-notes:focus{outline:none;border-style:solid;border-color:var(--accent)}
+.chk{width:24px;height:24px;border-radius:50%;border:2px solid var(--accent);background:transparent;color:#fff;display:grid;place-items:center;font-size:.8rem;font-weight:700;flex:none;cursor:pointer;padding:0}
+.chk.on{background:var(--ok);border-color:var(--ok)}
+.sg-meet li.done{opacity:.65}
+.btn.cal.icon-only{padding-inline:8px}
+#praise canvas.fw{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#praise b,#praise span{position:relative}
+@media (prefers-reduced-motion:no-preference){#praise.long:not([hidden]){animation-duration:3s}#praise.long:not([hidden]) b{animation-duration:3s}}
 .wa-bar{display:flex;align-items:center;gap:12px;width:100%;border:1px solid rgba(31,168,85,.25);background:linear-gradient(135deg,rgba(31,168,85,.12),rgba(6,182,212,.08)),var(--card);border-radius:12px;padding:10px 14px;color:var(--ink);text-align:start;font:inherit;cursor:pointer}
 .wa-bar:hover{border-color:var(--wa)}
 .wa-bar .ic{width:34px;height:34px;border-radius:9px;background:var(--wa);color:#fff;display:grid;place-items:center;flex:none}
@@ -755,7 +785,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="parser.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

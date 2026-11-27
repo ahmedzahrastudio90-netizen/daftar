@@ -176,7 +176,7 @@
 
   // open windows sit on the browser's top layer, so messages are moved into the top-most one to stay visible
   const topHost = () => [...document.querySelectorAll("dialog[open]")].pop() || document.body;
-  function toast(msg){ const t=$("toast"); topHost().appendChild(t); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2600); }
+  function toast(msg, ms){ const t=$("toast"); topHost().appendChild(t); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, ms || 2600); }
 
   // ---------- data writes ----------
   const store = {
@@ -451,19 +451,32 @@
   const reminderText = (j) => { const nd = nextDue(j), k = daysUntil(nd.date); return (k < 0 ? "متأخر " + dayWord(-k) : k === 0 ? "التسليم اليوم" : k === 1 ? "التسليم غداً" : "متبقٍ " + dayWord(k)) + ": " + (j.title||"") + (nd.label ? " (" + nd.label + ")" : "") + (j.client ? " — " + j.client : ""); };
   const todayMeetings = () => jobs.flatMap(j => meetingsOf(j).filter(m => !m.done && m.date === todayStr()).map(m => ({...m, client:j.client}))).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
   const meetTimers = [];
-  function scheduleMeetingAlerts(){ // while the app is open: alert 30 minutes before
-    meetTimers.splice(0).forEach(clearTimeout);
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
-    for (const m of todayMeetings()){
-      if (!m.time) continue;
-      const [hh,mm] = m.time.split(":").map(Number), at = new Date(); at.setHours(hh, mm - 30, 0, 0);
-      const ms = at - Date.now();
-      if (ms > 0 && ms < 12*3600e3) meetTimers.push(setTimeout(async () => {
-        const opts = {body:(m.title||"اجتماع") + " الساعة " + fmtTime(m.time), tag:"meet-"+m.id, icon:"icons/icon-192.png", dir:"rtl", lang:"ar"};
-        try { const reg = await navigator.serviceWorker?.getRegistration(); reg ? reg.showNotification("اجتماع بعد نصف ساعة", opts) : new Notification("اجتماع بعد نصف ساعة", opts); } catch(e){}
-      }, ms));
+  // while the app is open (or in the background on a computer): a pop-up on screen 30 minutes before each meeting and
+  // at 10 AM on delivery days, as a system notification when allowed, and inside the app either way
+  async function alertNow(title, body, tag){
+    const sys = "Notification" in window && Notification.permission === "granted";
+    if (LS.get("ledger.alerted", {})[tag] || (!sys && document.hidden)) return;
+    const seen = LS.get("ledger.alerted", {}); seen[tag] = todayStr(); for (const k in seen) if (seen[k] < addDays(todayStr(), -3)) delete seen[k]; LS.set("ledger.alerted", seen);
+    if (sys){
+      const opts = {body, tag, icon:"icons/icon-192.png", badge:"icons/icon-192.png", dir:"rtl", lang:"ar", requireInteraction:true};
+      try { const reg = await navigator.serviceWorker?.getRegistration(); reg ? reg.showNotification(title, opts) : new Notification(title, opts); } catch(e){}
     }
+    if (!document.hidden) toast("🔔 " + title + ": " + body, 9000);
   }
+  function scheduleMeetingAlerts(){
+    meetTimers.splice(0).forEach(clearTimeout);
+    const now = Date.now(), plan = (at, fn) => { const ms = at - now; if (ms > -10*60e3 && ms < 13*3600e3) meetTimers.push(setTimeout(fn, Math.max(0, ms))); };
+    for (const j of jobs) for (const m of meetingsOf(j)){
+      if (m.done || !m.date || !m.time || daysUntil(m.date) < 0 || daysUntil(m.date) > 1) continue;
+      const [y,mo,d] = m.date.split("-").map(Number), [hh,mm] = m.time.split(":").map(Number);
+      const at = new Date(y, mo-1, d, hh, mm - 30).getTime();
+      if (now < at + 30*60e3) plan(at, () => alertNow("ميتنج بعد نص ساعة", (m.title||"اجتماع") + " الساعة " + fmtTime(m.time), "meet-" + m.id + "-" + m.date + m.time));
+    }
+    const ten = new Date(); ten.setHours(10, 0, 0, 0);
+    const today = jobs.filter(j => isOpen(j) && nextDue(j).date === todayStr());
+    if (today.length) plan(ten.getTime(), () => alertNow("تسليم النهارده", today.map(j => (j.title||"") + (nextDue(j).label ? " (" + nextDue(j).label + ")" : "") + (j.client ? " — " + j.client : "")).join("\n"), "due-" + todayStr()));
+  }
+  setInterval(() => scheduleMeetingAlerts(), 30*60e3);
   async function reminders(){
     const list = dueSoon(), meets = todayMeetings();
     try { if ("setAppBadge" in navigator) (list.length + meets.length) ? navigator.setAppBadge(list.length + meets.length) : navigator.clearAppBadge(); } catch(e){}
@@ -530,7 +543,8 @@
         return h("li",{tabindex:"0",class:today?"is-today":"",onclick:()=>openSheet(j.id)},
           h("div",{class:"timebox"}, h("b",{class:"num"}, t ? t.split(" ")[0] : "—"), h("span",null, t ? t.split(" ")[1] : "")),
           h("div",{class:"grow"}, h("div",{class:"t"}, m.title || "اجتماع"), h("div",{class:"s"}, j.client || "")),
-          h("span",{class:"cd " + (today ? "c-soon" : "c-ok")}, relDay(m.date)));
+          h("span",{class:"cd " + (today ? "c-soon" : "c-ok")}, relDay(m.date)),
+          h("span",{onclick:e=>e.stopPropagation()}, meetCheck(j, m)));
       })));
   }
   function markArrived(j, idx){
@@ -1071,7 +1085,7 @@
       price:n($("fPrice").value), currency:wz.cur, revisions: $("fRevs").value === "" ? "" : n($("fRevs").value),
       start, due:$("fDue").value, finish:$("fFinish").value, notes:$("fNotes").value.trim()
     });
-    data.phases = wz.phases.filter(p => p.start && p.due).map((p,i) => ({id:p.id || newId(), title:(p.title||"").trim() || "المرحلة " + (i+1), start:p.start, due:p.due, days:daysBetween(p.start, p.due), done:!!p.done, doneDate:p.doneDate||""}));
+    data.phases = wz.phases.filter(p => p.start && p.due).map((p,i) => ({id:p.id || newId(), title:(p.title||"").trim() || "المرحلة " + (i+1), start:p.start, due:p.due, days:daysBetween(p.start, p.due), done:!!p.done, doneDate:p.doneDate||"", ...(p.state ? {state:p.state} : {}), ...(p.notes ? {notes:p.notes} : {})}));
     if (data.phases.length){ data.start = data.phases.map(p=>p.start).sort()[0]; data.due = data.phases.map(p=>p.due).sort().pop(); }
     if (!j){ const dep = n($("fDeposit").value); if (dep > 0) data.payments = [stampPay({amount:dep, date:start||todayStr(), note:"عربون", rate: n($("fRate").value) || null, ...(wz.depRecv ? {} : {received:false})}, wz.cur)]; }
     const id = wz.id || newId();
@@ -1082,13 +1096,112 @@
   }
 
   // ---------- details sheet ----------
+
+  // ---------- project stages: ordered, each with a clear state, its review meeting and its own notes ----------
+  const STAGE = {todo:{t:"لسه",c:"st-todo"}, doing:{t:"قيد التنفيذ",c:"st-doing"}, done:{t:"تمت ✓",c:"st-done"}};
+  function stageState(list, i){
+    const p = list[i]; if (p.done) return "done";
+    if (p.state === "doing" || p.state === "todo") return p.state;
+    return list.findIndex(q => !q.done) === i ? "doing" : "todo";
+  }
+  let stageAdd = null, stageMeet = null;
+  function setStage(j, i, st){
+    const list = phasesOf(j), was = stageState(list, i);
+    if (was === st) return;
+    const nx = bodyOf(j);
+    nx.phases = list.map((q, k) => k !== i ? q : {...q, state: st, done: st === "done", doneDate: st === "done" ? todayStr() : ""});
+    if (st === "done"){ const nxt = nx.phases.findIndex((q, k) => k > i && !q.done); if (nxt >= 0 && !nx.phases.some(q => q.state === "doing" && !q.done)) nx.phases[nxt] = {...nx.phases[nxt], state:"doing"}; }
+    store.save(j.id, nx);
+    if (st === "done") praise("خلصت مرحلة «" + (list[i].title || ("المرحلة " + (i+1))) + "»", true); else toast("تم الحفظ ✓ " + STAGE[st].t);
+  }
+  const noteTimers = {};
+  function saveStageNote(j, pid, val){
+    clearTimeout(noteTimers[pid]);
+    noteTimers[pid] = setTimeout(() => {
+      const cur = jobs.find(x => x.id === j.id); if (!cur) return;
+      const nx = bodyOf(cur); nx.phases = phasesOf(cur).map(q => q.id === pid ? {...q, notes: val} : q);
+      all[cur.id] = {...nx, id: cur.id, updatedAt: Date.now(), dirty: true}; persist(); refreshJobs(); scheduleSync();
+    }, 600);
+  }
+  const saveJ = (j, nx, msg) => { store.save(j.id, nx); toast(msg); };
+  function meetDone(j, m){
+    const nx = bodyOf(j); nx.meetings = meetingsOf(j).map(x => x.id === m.id ? {...x, done: !m.done} : x);
+    saveJ(j, nx, m.done ? "تم الحفظ ✓" : "تم الاجتماع ✓");
+  }
+  const meetCheck = (j, m) => h("button",{class:"chk" + (m.done ? " on" : ""),type:"button","aria-pressed":String(!!m.done),title:m.done ? "تم" : "علّم إنه تم","aria-label":"تم الاجتماع",onclick:()=>meetDone(j, m)}, m.done ? "✓" : "");
+  function stagesBlock(j){
+    const list = phasesOf(j), meets = meetingsOf(j);
+    const doneN = list.filter(p => p.done).length;
+    const addForm = stageAdd ? h("form",{class:"mini",onsubmit:e=>{
+        e.preventDefault();
+        const t = $("sgTitle").value.trim(); if (!t) return;
+        const last = list[list.length-1], start = last && last.due ? last.due : (j.start || todayStr());
+        const nx = bodyOf(j); nx.phases = [...list, {id:newId(), title:t, start, due:addDays(start, 7), days:7, done:false, doneDate:""}];
+        nx.start = nx.phases.map(p=>p.start).sort()[0]; nx.due = nx.phases.map(p=>p.due).sort().pop();
+        stageAdd = null; saveJ(j, nx, "تمت إضافة المرحلة ✓");
+      }},
+      h("label",{class:"f full"},"اسم المرحلة", h("input",{id:"sgTitle",placeholder:"لوجو، هوية بصرية، تغليف…"})),
+      h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary sm",type:"submit"},"إضافة"), h("button",{class:"btn sm",type:"button",onclick:()=>{stageAdd=null;renderSheet();}},"إلغاء"))) : null;
+    return h("div",{class:"blk"},
+      h("div",{style:"display:flex;align-items:center;gap:8px"},
+        h("h3",{style:"margin:0;flex:1"}, "المراحل" + (list.length ? " · " + doneN + " من " + list.length : "")),
+        !stageAdd ? h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>{stageAdd={}; renderSheet(); setTimeout(()=>$("sgTitle")?.focus(),30);}}, icon("i-plus"), "مرحلة") : null),
+      list.length ? h("div",{class:"meter" + (doneN === list.length ? " full" : ""),style:"margin:10px 0 4px"}, h("i",{style:"width:" + (doneN/list.length*100).toFixed(1) + "%"})) : null,
+      list.length ? h("ol",{class:"stages"}, ...list.map((p, i) => {
+        const st = stageState(list, i), pm = meets.filter(m => m.phaseId === p.id).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+        return h("li",{class:"stage " + STAGE[st].c},
+          h("div",{class:"sg-h"},
+            h("span",{class:"sg-n"}, st === "done" ? "✓" : String(i+1)),
+            h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1))),
+              h("div",{class:"hint"}, (p.start ? dshort(p.start) + " ← " : "حتى ") + dshort(p.due) + (st !== "done" && p.due && daysUntil(p.due) < 0 ? " · متأخرة" : st === "done" && p.doneDate ? " · خلصت " + dshort(p.doneDate) : ""))),
+            st !== "done" && p.due && daysUntil(p.due) >= 0 ? calButton(deliveryEvent(j, p), "") : null),
+          h("div",{class:"seg sg-seg",role:"group","aria-label":"حالة المرحلة"}, ...["todo","doing","done"].map(k => h("button",{type:"button","aria-pressed":String(st===k),onclick:()=>setStage(j, i, k)}, STAGE[k].t))),
+          pm.length ? h("ul",{class:"sg-meet"}, ...pm.map(m => h("li",{class:m.done ? "done" : ""}, meetCheck(j, m),
+            h("span",{class:"grow"}, (m.title || "اجتماع") + " · " + (m.done ? "تم ✓" : relDay(m.date) + (m.time ? " " + fmtTime(m.time) : ""))),
+            !m.done && daysUntil(m.date) >= 0 ? calButton(meetingEvent(j, m), "") : null))) : null,
+          stageMeet === p.id ? h("form",{class:"mini",onsubmit:e=>{
+              e.preventDefault();
+              const m = {id:newId(), phaseId:p.id, title:"عرض «" + (p.title||"المرحلة") + "» على " + (j.client||"العميل"), date:$("smDate").value || todayStr(), time:$("smTime").value || ""};
+              const nx = bodyOf(j); nx.meetings = [...meets, m]; stageMeet = null; justMeet = m.id;
+              saveJ(j, nx, "تم حفظ الميتنج ✓");
+              if ("Notification" in window && Notification.permission === "default") enableNotify();
+            }},
+            h("label",{class:"f"},"اليوم", h("input",{id:"smDate",type:"date",value:p.due || todayStr()})),
+            h("label",{class:"f"},"الساعة", h("input",{id:"smTime",type:"time",value:"12:00"})),
+            h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary sm",type:"submit"},"حفظ"), h("button",{class:"btn sm",type:"button",onclick:()=>{stageMeet=null;renderSheet();}},"إلغاء")))
+          : st !== "done" ? h("button",{class:"btn ghost sm sg-add",type:"button",onclick:()=>{stageMeet=p.id; renderSheet();}}, icon("i-plus"), "ميتنج العرض والموافقة") : null,
+          h("textarea",{class:"sg-notes",rows:"2",placeholder:"ملاحظات المرحلة: طلبات العميل، اللي اتفقنا عليه في الميتنج…",oninput:e=>saveStageNote(j, p.id, e.target.value)}, p.notes || ""));
+      })) : (!stageAdd ? h("div",{class:"hint",style:"margin-top:4px"},"قسّم الشغل مراحل (لوجو ← هوية ← تغليف) عشان تتابع كل واحدة لوحدها.") : null),
+      addForm);
+  }
   let sheetId = null, confirmDel = false, payDraft = null;
   let meetDraft = null, payOpen = false, justMeet = "";
-  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; justMeet = ""; calMenu = ""; renderSheet(); openDlg($("sheetDlg")); }
-  function praise(sub){
+  function openSheet(id){ sheetId = id; stageAdd = null; stageMeet = null; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; justMeet = ""; calMenu = ""; renderSheet(); openDlg($("sheetDlg")); }
+  function praise(sub, fw){
     const p = $("praise"); topHost().appendChild(p); $("praiseSub").textContent = sub || "";
     p.hidden = true; void p.offsetWidth; p.hidden = false;
-    clearTimeout(praise._t); praise._t = setTimeout(() => { p.hidden = true; }, 2200);
+    p.classList.toggle("long", !!fw);
+    if (fw) fireworks(p);
+    clearTimeout(praise._t); praise._t = setTimeout(() => { p.hidden = true; }, fw ? 3000 : 2200);
+  }
+  // a short, light burst of gold and brand-colored sparks
+  function fireworks(host){
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    host.querySelector("canvas")?.remove();
+    const cv = document.createElement("canvas"), dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; cv.className = "fw"; host.prepend(cv);
+    const cx = cv.getContext("2d"); cx.scale(dpr, dpr);
+    const cols = ["#FDE68A","#F59E0B","#FBBF24","#22D3EE","#818CF8","#F0ABFC","#FFFFFF"], parts = [];
+    const burst = (x, y) => { const c = cols[(Math.random() * cols.length) | 0], k = 46; for (let i = 0; i < k; i++){ const a = i / k * Math.PI * 2, v = 2.2 + Math.random() * 2.6; parts.push({x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, c: Math.random() < .25 ? "#FFFFFF" : c}); } };
+    const spots = [[.25,.28],[.75,.24],[.5,.16],[.18,.5],[.82,.48]];
+    spots.forEach(([fx, fy], i) => setTimeout(() => burst(W * fx, H * fy), i * 260));
+    const t0 = performance.now();
+    (function frame(t){
+      cx.clearRect(0, 0, W, H);
+      for (const q of parts){ q.vx *= .975; q.vy = q.vy * .975 + .05; q.x += q.vx; q.y += q.vy; q.life -= .011;
+        if (q.life > 0){ cx.globalAlpha = Math.max(0, q.life); cx.fillStyle = q.c; cx.beginPath(); cx.arc(q.x, q.y, 2.1, 0, 7); cx.fill(); } }
+      if (t - t0 < 2900 && !host.hidden) requestAnimationFrame(frame); else cv.remove();
+    })(t0);
   }
   for (const d of ["sheetDlg","wizDlg","waDlg","expDlg"]) $(d).addEventListener("click", e => { if (e.target === $(d)) $(d).close(); });
 
@@ -1134,6 +1247,7 @@
         h("div",{class:"who"}, (j.client||"—") + (typeText(j) ? " · " + typeText(j) : "")),
         h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"}, stPill(j), cdChip(j))),
       h("div",{class:"sh-b"},
+        stagesBlock(j),
         h("div",{class:"blk"},
           h("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:8px"}, h("h3",{style:"margin:0;flex:1"},"الحساب · " + CUR_NAME[cur]), eyeBtn()),
           h("div",{class:"mgrid"},
@@ -1156,20 +1270,12 @@
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الدفعة",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).filter((_,i)=>i!==p.i); save(nx,"تم حذف الدفعة"); }}, icon("i-x"))
           ))) : h("div",{class:"hint"},"لا توجد دفعات بعد."),
           payBtn, payForm),
-        phasesOf(j).length ? h("div",{class:"blk"}, h("h3",null,"مراحل التسليم"),
-          h("ul",{class:"mt"}, ...phasesOf(j).map((p, i) => h("li",{class:p.done?"done":""},
-            h("input",{type:"checkbox",checked:p.done?true:null,"aria-label":"تمت المرحلة",onchange:e=>{
-              const nx = bodyOf(j); nx.phases = phasesOf(j).map((q,k) => k===i ? {...q, done:e.target.checked, doneDate:e.target.checked?todayStr():""} : q);
-              store.save(j.id, nx); toast(e.target.checked ? "تم الحفظ ✓ مرحلة «" + (p.title||"") + "»" : "تم الحفظ ✓"); }}),
-            h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1))), h("div",{class:"hint"}, (p.start ? "من " + dshort(p.start) + " لـ " : "حتى ") + dshort(p.due))),
-            !p.done && daysUntil(p.due) >= 0 ? calButton(deliveryEvent(j, p), "للتقويم") : null,
-            h("span",{class:"cd " + (p.done ? "c-done" : daysUntil(p.due) < 0 ? "c-late" : daysUntil(p.due) <= 2 ? "c-soon" : "c-ok")}, p.done ? "تمت" : dshort(p.due)))))) : null,
         h("div",{class:"blk"},
           h("div",{style:"display:flex;align-items:center;gap:8px"}, h("h3",{style:"margin:0;flex:1"},"الاجتماعات"),
             !meetDraft ? h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>{meetDraft={title:"اجتماع مع " + (j.client||"العميل"), date:todayStr(), time:"12:00"}; renderSheet(); setTimeout(()=>$("mTitle")?.focus(),30);}}, icon("i-plus"), "اجتماع") : null),
-          meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => h("li",{class:daysUntil(m.date) < 0 ? "done" : ""},
-            icon("i-cal"), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : ""))),
-            daysUntil(m.date) >= 0 && m.id !== justMeet ? calButton(meetingEvent(j, m), "للتقويم") : null,
+          meetingsOf(j).length ? h("ul",{class:"mt",style:"margin-top:8px"}, ...meetingsOf(j).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(m => h("li",{class:m.done ? "done" : ""},
+            meetCheck(j, m), h("div",{class:"grow"}, h("b",null, m.title || "اجتماع"), h("div",{class:"hint"}, relDay(m.date) + (m.time ? " · " + fmtTime(m.time) : "") + (m.done ? " · تم ✓" : !m.done && daysUntil(m.date) < 0 ? " · علّم عليه لو تم" : ""))),
+            !m.done && daysUntil(m.date) >= 0 && m.id !== justMeet ? calButton(meetingEvent(j, m), "للتقويم") : null,
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الاجتماع",onclick:()=>{ const nx = bodyOf(j); nx.meetings = meetingsOf(j).filter(x=>x.id!==m.id); save(nx,"تم حذف الاجتماع"); }}, icon("i-x"))))) : (!meetDraft ? h("div",{class:"hint",style:"margin-top:4px"},"لا توجد اجتماعات.") : null),
           justMeet && meetingsOf(j).some(m => m.id === justMeet) ? h("div",{class:"cal-tip"},
             h("div",null, h("b",null,"خلّي موبايلك يفكّرك"), h("span",null,"أضفه لتقويمك، فيجيلك تنبيه قبله بنص ساعة حتى لو التطبيق مقفول.")),
@@ -1254,11 +1360,12 @@
   }
   function calButton(ev, label){
     if (!ev.date) return null;
-    const txt = label || (isMobile ? "أضف لتقويم موبايلي" : "أضف للتقويم");
-    if (isAndroid) return h("button",{class:"btn sm cal",type:"button",onclick:()=>openGoogle(ev)}, icon("i-cal"), txt);
-    if (isIOS) return h("button",{class:"btn sm cal",type:"button",onclick:()=>{ saveIcs(ev); toast("افتح الملف واضغط «إضافة» في التقويم"); }}, icon("i-cal"), txt);
+    const txt = label === "" ? null : (label || (isMobile ? "أضف لتقويم موبايلي" : "أضف للتقويم"));
+    const at = {class:"btn sm cal" + (txt ? "" : " icon-only"),type:"button",title:"أضف للتقويم","aria-label":"أضف للتقويم"};
+    if (isAndroid) return h("button",{...at,onclick:()=>openGoogle(ev)}, icon("i-cal"), txt);
+    if (isIOS) return h("button",{...at,onclick:()=>{ saveIcs(ev); toast("افتح الملف واضغط «إضافة» في التقويم"); }}, icon("i-cal"), txt);
     // computer: Google Calendar or a calendar file for Outlook / Mac Calendar
-    if (calMenu !== ev.key) return h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ev.key; renderSheet(); }}, icon("i-cal"), txt);
+    if (calMenu !== ev.key) return h("button",{...at,onclick:()=>{ calMenu = ev.key; renderSheet(); }}, icon("i-cal"), txt);
     return h("span",{class:"cal-menu"},
       h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ""; openGoogle(ev); renderSheet(); }}, "Google Calendar"),
       h("button",{class:"btn sm cal",type:"button",onclick:()=>{ calMenu = ""; saveIcs(ev); toast("افتح الملف ليُضاف إلى Outlook أو تقويم ماك"); renderSheet(); }}, "Outlook / تقويم ماك"),
