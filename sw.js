@@ -1,11 +1,12 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v15";
-const SHELL = ["./", "index.html", "app.js", "parser.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+const VERSION = "ledger-v16";
+const SHELL = ["./", "index.html", "app.js?v=16", "parser.js?v=16", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
   "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // "reload" skips the browser's HTTP cache, so a new version never mixes with old files
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("ledger-") && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
@@ -42,13 +43,15 @@ self.addEventListener("fetch", (e) => {
   }
   if (url.origin !== location.origin) return;
 
-  // App files: open instantly from the phone, fetch updates in the background for next time
+  // App files: open instantly from the phone; refresh in the background for next time
   e.respondWith((async () => {
     const cache = await caches.open(VERSION);
-    const hit = await cache.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request).then((res) => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => null);
+    const isPage = e.request.mode === "navigate";
+    const hit = isPage ? (await cache.match("./")) || (await cache.match("index.html")) : await cache.match(e.request);
+    const net = fetch(url.href, { cache: "no-cache", credentials: "same-origin" })
+      .then((res) => { if (res.ok && !res.redirected) cache.put(isPage ? "./" : e.request, res.clone()); return res; }).catch(() => null);
     if (hit) { e.waitUntil(net); return hit; }
-    return (await net) || (await cache.match("index.html")) || Response.error();
+    return (await net) || (await cache.match("./")) || Response.error();
   })());
 });
 

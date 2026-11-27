@@ -1462,7 +1462,12 @@
 
   // ---------- boot ----------
   // first run on a new device: nothing local, sheet linked → pull
-  if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register("sw.js").catch(()=>{});
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))){
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded && !document.querySelector("dialog[open]")){ reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(()=>{});
+  }
   if (isLocked()){ if (settings.lock && settings.lock.on) renderLock(); else document.documentElement.removeAttribute("data-locked"); }
   render();
   runSplash();
