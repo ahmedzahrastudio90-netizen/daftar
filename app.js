@@ -372,34 +372,44 @@
     }
     return items.sort((x,y) => (x.date + (x.time||"99")).localeCompare(y.date + (y.time||"99")));
   }
-  function todayPanel(){
-    const items = upcomingItems().slice(0, 6);
+  function meetingsPanel(){
+    const list = [];
+    for (const j of jobs) for (const m of meetingsOf(j)) if (!m.done && m.date && daysUntil(m.date) >= 0 && daysUntil(m.date) <= 7) list.push({j, m});
+    if (!list.length) return null;
+    list.sort((x,y) => (x.m.date + (x.m.time||"99")).localeCompare(y.m.date + (y.m.time||"99")));
+    return h("section",{class:"panel today"},
+      h("div",{class:"panel-h"}, h("h2",null,"الاجتماعات")),
+      h("ul",{class:"plist"}, ...list.slice(0, 5).map(({j, m}) => {
+        const today = daysUntil(m.date) === 0, t = fmtTime(m.time);
+        return h("li",{tabindex:"0",class:today?"is-today":"",onclick:()=>openSheet(j.id)},
+          h("div",{class:"timebox"}, h("b",{class:"num"}, t ? t.split(" ")[0] : "—"), h("span",null, t ? t.split(" ")[1] : "")),
+          h("div",{class:"grow"}, h("div",{class:"t"}, m.title || "اجتماع"), h("div",{class:"s"}, j.client || "")),
+          h("span",{class:"cd " + (today ? "c-soon" : "c-ok")}, relDay(m.date)));
+      })));
+  }
+  function deliveriesPanel(){
+    const open = jobs.filter(isOpen).sort((a,b) => (nextDue(a).date || "9999").localeCompare(nextDue(b).date || "9999")).slice(0, 6);
     const pend = jobs.flatMap(j => paysOf(j).filter(p => !isRecv(p)).map(p => ({j, p, age: -daysUntil(p.date || todayStr())})));
     const lateT = pend.filter(x => x.age > 5).sort((a,b) => b.age - a.age);
     const transit = pend.length - lateT.length;
-    const rows = items.map(it => {
-      const j = it.j;
-      if (it.kind === "meet") return h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
-        h("div",{class:"timebox"}, h("b",{class:"num"}, fmtTime(it.time).split(" ")[0] || "—"), h("span",null, it.time ? fmtTime(it.time).split(" ")[1] : "")),
-        h("div",{class:"grow"}, h("div",{class:"t"}, it.m.title || "اجتماع"), h("div",{class:"s"}, relDay(it.date) + " · " + (j.client||""))),
-        h("span",{class:"cd " + (daysUntil(it.date) === 0 ? "c-soon" : "c-ok")}, daysUntil(it.date) === 0 ? "اليوم" : "اجتماع"));
-      const d = parseD(it.date === "9999-12-31" ? "" : it.date);
-      return h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
-        h("div",{class:"datebox"+(isLate(j)?" late":"")}, h("b",{class:"num"}, d?d.getDate():"—"), h("span",null, d?MONTHS[d.getMonth()]:"بدون")),
-        h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم", it.label ? h("span",{class:"tag"}, it.label) : null), h("div",{class:"s"}, j.client||"—")),
-        cdChip(j));
-    });
-    for (const {j, p, age} of lateT.slice(0, 3)) rows.unshift(h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+    const rows = lateT.slice(0, 3).map(({j, p, age}) => h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
       h("div",{class:"timebox",style:"background:var(--bad-soft)"}, h("b",null,"⏳"), h("span",null,"")),
       h("div",{class:"grow"}, h("div",{class:"t"}, "تحويل متأخر " + dayWord(age) + ": " + money(p.amount, curOf(j))), h("div",{class:"s"}, (j.client || "") + " · " + (j.title || ""))),
       h("span",{class:"cd c-late"},"تابع")));
+    for (const j of open){
+      const nd = nextDue(j), d = parseD(nd.date);
+      rows.push(h("li",{tabindex:"0",onclick:()=>openSheet(j.id)},
+        h("div",{class:"datebox"+(isLate(j)?" late":"")}, h("b",{class:"num"}, d?d.getDate():"—"), h("span",null, d?MONTHS[d.getMonth()]:"بدون")),
+        h("div",{class:"grow"}, h("div",{class:"t"}, j.title||"بدون اسم", nd.label ? h("span",{class:"tag"}, nd.label) : null), h("div",{class:"s"}, j.client||"—")),
+        cdChip(j)));
+    }
     if (transit) rows.push(h("li",{tabindex:"0",onclick:()=>go("money")},
       h("div",{class:"timebox"}, h("b",null,"⏳"), h("span",null,"")),
       h("div",{class:"grow"}, h("div",{class:"t"}, "مدفوعات قيد التحويل"), h("div",{class:"s"}, transit + " دفعة لم تصل لحسابك بعد")),
       h("span",{class:"cd c-soon"},"تابع")));
     return h("section",{class:"panel today"},
-      h("div",{class:"panel-h"}, h("h2",null,"القادم"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="active";jobsTab="projects";go("jobs")}},"كل المشاريع")),
-      rows.length ? h("ul",{class:"plist"}, ...rows) : h("div",{class:"pempty"},"لا يوجد شيء عاجل. يوم موفق 🌿"));
+      h("div",{class:"panel-h"}, h("h2",null,"التسليمات"), h("button",{class:"btn ghost sm",type:"button",onclick:()=>{filter="active";jobsTab="projects";go("jobs")}},"كل المشاريع")),
+      rows.length ? h("ul",{class:"plist"}, ...rows) : h("div",{class:"pempty"},"لا توجد تسليمات قادمة. يوم موفق 🌿"));
   }
   function moneyCards(){
     const now = new Date(), ym = todayStr().slice(0,7), y = String(now.getFullYear());
@@ -414,7 +424,7 @@
   }
   function viewHome(){
     if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
-    return [waCard(), installCard(), todayPanel(), moneyHead(), moneyCards()];
+    return [waCard(), installCard(), meetingsPanel(), deliveriesPanel(), moneyHead(), moneyCards()];
   }
 
   // ---------- accounts ----------
@@ -794,12 +804,12 @@
   }
 
   // ---------- add / edit form ----------
-  const wz = {id:null, types:[], cur:"EGP", phases:[], finishAuto:true, depRecv:true, onSaved:null};
+  const wz = {id:null, types:[], cur:"EGP", phases:[], finishAuto:true, depRecv:false, onSaved:null};
   const daysBetween = (a, b) => { const x = parseD(a), y = parseD(b); return x && y ? Math.round((y - x) / 86400000) : ""; };
   const CUR_ORDER = ["EGP","SAR","USD","AED","KWD","EUR"];
   function openForm(id, preset){
     const j = id ? all[id] : null;
-    wz.id = id; wz.onSaved = preset?.onSaved || null; wz.depRecv = true;
+    wz.id = id; wz.onSaved = preset?.onSaved || null; wz.depRecv = false;
     $("wzTitle").textContent = j ? "تعديل المشروع" : "مشروع جديد";
     $("wzSave").textContent = j ? "حفظ التعديلات" : "حفظ المشروع";
     const src = j || preset || {};
@@ -843,7 +853,7 @@
   }
   function renderDepRecv(){
     $("depRecv").hidden = !!wz.id || !n($("fDeposit").value);
-    $("depRecv").replaceChildren(...[[true,"وصل حسابي"],[false,"قيد التحويل"]].map(([v,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(wz.depRecv===v),onclick:()=>{wz.depRecv=v; renderDepRecv();}}, t)));
+    $("depRecv").replaceChildren(...[[false,"قيد التحويل"],[true,"وصل حسابي"]].map(([v,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(wz.depRecv===v),onclick:()=>{wz.depRecv=v; renderDepRecv();}}, t)));
   }
   function updateRemLine(){
     renderDepRecv();
@@ -942,8 +952,8 @@
 
   // ---------- details sheet ----------
   let sheetId = null, confirmDel = false, payDraft = null;
-  let meetDraft = null;
-  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; renderSheet(); openDlg($("sheetDlg")); }
+  let meetDraft = null, payOpen = false;
+  function openSheet(id){ sheetId = id; confirmDel = false; payDraft = null; meetDraft = null; payOpen = false; renderSheet(); openDlg($("sheetDlg")); }
   function praise(sub){
     const p = $("praise"); topHost().appendChild(p); $("praiseSub").textContent = sub || "";
     p.hidden = true; void p.offsetWidth; p.hidden = false;
@@ -954,7 +964,7 @@
   function renderSheet(){
     const j = jobs.find(x=>x.id===sheetId);
     if (!j){ if ($("sheetDlg").open) $("sheetDlg").close(); return; }
-    if ($("pAmt")) payDraft = {amt:$("pAmt").value, date:$("pDate").value, note:$("pNote").value, rate: $("pRate") ? $("pRate").value : "", recv: $("pRecv") ? $("pRecv").checked : true};
+    if ($("pAmt")) payDraft = {amt:$("pAmt").value, date:$("pDate").value, note:$("pNote").value, rate: $("pRate") ? $("pRate").value : "", recv: payDraft ? payDraft.recv : false};
     const paid = paidOf(j), rem = remOf(j), price = n(j.price), cur = curOf(j);
     const pays = paysOf(j).map((p,i)=>({...p,i})).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
     const digits = (j.phone||"").replace(/[^\d]/g,"");
@@ -964,25 +974,27 @@
       const was = j.status, nx = bodyOf(j); nx.status = s; nx.delivered = s === "done" ? (nx.delivered || todayStr()) : "";
       if (s === "done") nx.phases = phasesOf(j).map(p => p.done ? p : {...p, done:true, doneDate:todayStr()});
       store.save(j.id, nx);
-      if (s === "done" && was !== "done") praise("تم تسليم " + (j.title || "المشروع")); else toast("الحالة: " + STATUS[s].t);
+      if (s === "done" && was !== "done") praise("تم تسليم " + (j.title || "المشروع")); else toast("تم الحفظ ✓ " + STATUS[s].t);
     };
     const remindMsg = "أهلاً " + (j.client || "") + "،\nحبيت أفكّر حضرتك بالمتبقي من حساب مشروع «" + (j.title || "") + "»: " + rawFmt(rem) + " " + CUR[cur] + ".\nشكراً لحضرتك.";
 
-    const payForm = j.status !== "cancel" && rem > 0 ? h("form",{class:"payform",onsubmit:e=>{
+    const canPay = j.status !== "cancel" && rem > 0;
+    const payBtn = canPay && !payOpen ? h("button",{class:"btn sm",type:"button",style:"margin-top:10px",onclick:()=>{payOpen=true; payDraft=null; renderSheet(); setTimeout(()=>$("pAmt")?.focus(),30);}}, icon("i-plus"), "تسجيل دفعة") : null;
+    const payForm = canPay && payOpen ? h("form",{class:"payform",onsubmit:e=>{
         e.preventDefault();
         const amt = n($("pAmt").value); if (amt <= 0){ toast("أدخل المبلغ"); return; }
-        const nx = bodyOf(j); nx.payments = [...paysOf(j), stampPay({amount:amt, date:$("pDate").value||todayStr(), note:$("pNote").value.trim(), rate: $("pRate") ? n($("pRate").value) || null : null, ...($("pRecv").checked ? {} : {received:false})}, cur)];
-        payDraft = null;
-        if ($("pRecv").checked){ store.save(j.id, nx); praise("تم استلام " + money(amt, cur)); } else save(nx, "تم تسجيل دفعة قيد التحويل");
+        const nx = bodyOf(j); nx.payments = [...paysOf(j), stampPay({amount:amt, date:$("pDate").value||todayStr(), note:$("pNote").value.trim(), rate: $("pRate") ? n($("pRate").value) || null : null, ...(payDraft && payDraft.recv ? {} : {received:false})}, cur)];
+        const recvNow = payDraft && payDraft.recv; payOpen = false; payDraft = null;
+        if (recvNow){ store.save(j.id, nx); praise("تم استلام " + money(amt, cur)); } else save(nx, "تم الحفظ ✓ دفعة قيد التحويل");
       }},
       h("label",{class:"f money-in"},"المبلغ ("+CUR[cur]+")", h("input",{id:"pAmt",type:"number",min:"0",step:"any",inputmode:"decimal",value:payDraft?payDraft.amt:String(rem)})),
       h("label",{class:"f"},"التاريخ", h("input",{id:"pDate",type:"date",value:payDraft?payDraft.date:todayStr()})),
       cur !== settings.currency ? h("label",{class:"f full"}, "سعر الصرف: 1 " + CUR[cur] + " = " + CUR[settings.currency],
         h("input",{id:"pRate",type:"number",min:"0",step:"any",inputmode:"decimal",placeholder:"سعر اليوم",value:payDraft ? payDraft.rate : (rateNow(cur) || "")}),
         h("span",{class:"hint"}, "تُحتسب الدفعة بهذا السعر. عدّله إذا احتسب البنك أو المحفظة سعراً مختلفاً.")) : null,
-      h("label",{class:"full",style:"display:flex;gap:8px;align-items:center;font-size:.9rem"}, h("input",{id:"pRecv",type:"checkbox",checked:payDraft && payDraft.recv === false ? null : true,style:"width:18px;height:18px"}), "تم استلام المبلغ في حسابي"),
+      h("div",{class:"full picks",id:"pRecv"}, ...[[false,"قيد التحويل"],[true,"وصل حسابي"]].map(([v,t]) => h("button",{type:"button",class:"pick","aria-pressed":String(!!(payDraft && payDraft.recv) === v),onclick:()=>{ payDraft = {amt:$("pAmt").value, date:$("pDate").value, note:$("pNote").value, rate: $("pRate") ? $("pRate").value : "", recv:v}; renderSheet(); }}, t))),
       h("label",{class:"f full"},"طريقة الدفع", h("input",{id:"pNote",placeholder:"نقدي، فودافون كاش، إنستاباي، تحويل بنكي…",value:payDraft?payDraft.note:""})),
-      h("button",{class:"btn primary full",type:"submit",style:"justify-content:center"}, icon("i-plus"), "تسجيل دفعة")) : null;
+      h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary",type:"submit",style:"flex:1;justify-content:center"}, "حفظ الدفعة"), h("button",{class:"btn",type:"button",onclick:()=>{payOpen=false;payDraft=null;renderSheet();}},"إلغاء"))) : null;
 
     $("sheet").replaceChildren(
       h("div",{class:"sh-h"},
@@ -1007,16 +1019,17 @@
             h("span",{class:"a num"}, money(p.amount,cur)), h("span",null, dshort(p.date) + (p.recvDate && p.recvDate !== p.date ? " · استُلم " + dshort(p.recvDate) : "")),
             cur !== settings.currency ? h("span",{class:"hint num"}, payBase(p,cur) != null ? "= " + money(Math.round(payBase(p,cur))) + (p.rate && p.rateBase === settings.currency ? " (سعر " + fmtRate(p.rate) + ")" : " تقريباً") : "بدون سعر صرف") : null,
             h("span",{class:"n"}, p.note||""),
-            !isRecv(p) ? h("span",{class:"cd c-soon"},"قيد التحويل") : null,
-            !isRecv(p) ? h("button",{class:"btn sm",type:"button",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? {...q, received:true, recvDate:todayStr(), ...(cur!==settings.currency && !(q.rate && q.rateBase===settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q); store.save(j.id, nx); praise("تم استلام " + money(p.amount,cur)); }},"تم الاستلام") : null,
+            h("div",{class:"seg pstat",role:"group","aria-label":"حالة الدفعة"},
+              h("button",{type:"button","aria-pressed":String(!isRecv(p)),onclick:()=>{ if (!isRecv(p)) return; const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> { if (i !== p.i) return q; const r = {...q, received:false}; delete r.recvDate; return r; }); save(nx, "تم الحفظ ✓ قيد التحويل"); }},"قيد التحويل"),
+              h("button",{type:"button","aria-pressed":String(isRecv(p)),onclick:()=>{ if (isRecv(p)) return; const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? {...q, received:true, recvDate:todayStr(), ...(cur!==settings.currency && !(q.rate && q.rateBase===settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q); store.save(j.id, nx); praise("تم استلام " + money(p.amount,cur)); }},"وصلت")),
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الدفعة",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).filter((_,i)=>i!==p.i); save(nx,"تم حذف الدفعة"); }}, icon("i-x"))
           ))) : h("div",{class:"hint"},"لا توجد دفعات بعد."),
-          payForm),
+          payBtn, payForm),
         phasesOf(j).length ? h("div",{class:"blk"}, h("h3",null,"مراحل التسليم"),
           h("ul",{class:"mt"}, ...phasesOf(j).map((p, i) => h("li",{class:p.done?"done":""},
             h("input",{type:"checkbox",checked:p.done?true:null,"aria-label":"تمت المرحلة",onchange:e=>{
               const nx = bodyOf(j); nx.phases = phasesOf(j).map((q,k) => k===i ? {...q, done:e.target.checked, doneDate:e.target.checked?todayStr():""} : q);
-              store.save(j.id, nx); if (e.target.checked) toast("تمت مرحلة «" + (p.title||"") + "» ✓"); }}),
+              store.save(j.id, nx); toast(e.target.checked ? "تم الحفظ ✓ مرحلة «" + (p.title||"") + "»" : "تم الحفظ ✓"); }}),
             h("div",{class:"grow"}, h("b",null, p.title || ("المرحلة " + (i+1))), h("div",{class:"hint"}, (p.start ? "من " + dshort(p.start) + " لـ " : "حتى ") + dshort(p.due))),
             h("span",{class:"cd " + (p.done ? "c-done" : daysUntil(p.due) < 0 ? "c-late" : daysUntil(p.due) <= 2 ? "c-soon" : "c-ok")}, p.done ? "تمت" : dshort(p.due)))))) : null,
         h("div",{class:"blk"},
@@ -1055,7 +1068,7 @@
           h("button",{class:"btn sm danger solid",type:"button",onclick:()=>{store.remove(j.id);$("sheetDlg").close();toast("تم حذف المشروع")}},"حذف"),
           h("button",{class:"btn sm",type:"button",onclick:()=>{confirmDel=false;renderSheet()}},"إلغاء")) : null),
       h("div",{class:"sh-f"},
-        h("button",{class:"btn primary",type:"button",onclick:()=>{$("sheetDlg").close();openForm(j.id)}},"تعديل"),
+        h("button",{class:"btn primary",type:"button",onclick:()=>{$("sheetDlg").close();openForm(j.id)}}, icon("i-edit"), "تعديل بيانات المشروع"),
         h("button",{class:"btn",type:"button",onclick:()=>{$("sheetDlg").close();openForm(null,{client:j.client,phone:j.phone,currency:j.currency})}}, icon("i-plus"), "مشروع جديد لنفس العميل"),
         h("span",{class:"sp"}),
         !confirmDel ? h("button",{class:"btn ghost danger",type:"button",onclick:()=>{confirmDel=true;renderSheet()}},"حذف") : null));
