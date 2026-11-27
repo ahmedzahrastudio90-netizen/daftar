@@ -23,7 +23,7 @@ a{color:var(--accent)}
 <main>
 <section>
 <h2>ملخص</h2>
-<p>دفتر المصمم تطبيق لتنظيم العملاء والمشاريع والمدفوعات. كل بياناتك محفوظة على جهازك، ولا نملك أي خادم يستقبل بياناتك أو يخزنها، ولا نبيع أو نشارك أي بيانات مع أي جهة.</p>
+<p>دفتر المصمم تطبيق لتنظيم العملاء والمشاريع والمدفوعات. بياناتك محفوظة على جهازك، وإن سجّلت الدخول بجوجل تُحفظ نسخة منها في حسابك أنت على جوجل درايف. لا نملك أي خادم يستقبل بياناتك أو يخزنها، ولا نبيع أو نشارك أي بيانات مع أي جهة.</p>
 
 <h2>البيانات التي يحفظها التطبيق</h2>
 <ul>
@@ -31,6 +31,15 @@ a{color:var(--accent)}
 <li>إعدادات التطبيق: العملة الأساسية، واسمك كما يظهر في واتساب، ورابط الشيت إن قمت بالربط.</li>
 </ul>
 <p>تُحفظ هذه البيانات في مساحة التخزين الخاصة بالتطبيق على جهازك فقط.</p>
+
+<h2>الدخول بحساب جوجل (اختياري)</h2>
+<p>إذا سجّلت الدخول بجوجل لمزامنة أجهزتك، يطلب التطبيق صلاحية واحدة فقط: <b>drive.appdata</b>، وهي تسمح له بإنشاء وقراءة ملفاته الخاصة في فولدر مخفي داخل جوجل درايف الخاص بك. لا يستطيع التطبيق رؤية أي ملفات أخرى في حسابك، ولا يطلب اسمك أو صورتك أو جهات اتصالك.</p>
+<ul>
+<li>تُرسل بياناتك مباشرة من جهازك إلى جوجل درايف الخاص بك، ولا تمر بأي خادم تابع لنا.</li>
+<li>لإتمام الدخول يُستخدم خادم صغير وظيفته الوحيدة تحويل رمز الدخول الذي تعطيه جوجل إلى مفتاح وصول وتجديده. هذا الخادم لا يرى بياناتك، ولا يحفظ أي شيء.</li>
+<li>يُحفظ مفتاح الوصول على جهازك، ونسخة منه داخل الفولدر المخفي للتطبيق في درايفك حتى تستطيع الدخول من أجهزتك الأخرى.</li>
+<li>تلتزم طريقة استخدام التطبيق للمعلومات المستلمة من واجهات جوجل بـ<a href="https://developers.google.com/terms/api-services-user-data-policy">سياسة بيانات مستخدمي خدمات Google API</a>، بما في ذلك شروط الاستخدام المحدود.</li>
+</ul>
 
 <h2>الربط بشيت جوجل (اختياري)</h2>
 <p>إذا اخترت ربط التطبيق بشيت جوجل، تُرسل بياناتك مباشرة من جهازك إلى شيت وسكريبت تملكهما أنت في حسابك على جوجل، وتُضاف مواعيد التسليم إلى تقويم في حسابك. لا تمر هذه البيانات بأي خادم تابع لنا. يخضع تخزينها لدى جوجل لسياسة خصوصية جوجل.</p>
@@ -45,7 +54,7 @@ a{color:var(--accent)}
 <p>الإشعارات اختيارية، وتُنشأ على جهازك أو عبر تقويم جوجل الخاص بك إن قمت بالربط.</p>
 
 <h2>حذف البيانات</h2>
-<p>يمكنك حذف أي مشروع من داخل التطبيق، أو حذف كل البيانات بإزالة التطبيق أو مسح بياناته من إعدادات الجهاز. بيانات الشيت والتقويم تحذفها من حسابك على جوجل مباشرة.</p>
+<p>يمكنك حذف أي مشروع من داخل التطبيق، أو حذف كل البيانات بإزالة التطبيق أو مسح بياناته من إعدادات الجهاز. لحذف نسختك من جوجل درايف: الإعدادات ← ربط أجهزتي ← تسجيل الخروج ← «خروج ومسح نسختي من درايف»، أو من جوجل درايف ← الإعدادات ← إدارة التطبيقات ← دفتر المصمم ← حذف البيانات المخفية. ويمكنك إلغاء صلاحية التطبيق في أي وقت من myaccount.google.com/permissions. بيانات الشيت والتقويم تحذفها من حسابك على جوجل مباشرة.</p>
 
 <h2>الأطفال</h2>
 <p>التطبيق موجه لأصحاب الأعمال والمستقلين، وليس موجهاً للأطفال.</p>
@@ -56,11 +65,12 @@ a{color:var(--accent)}
 
 <section lang="en">
 <h2>Privacy Policy (English)</h2>
-<p>Daftar – Designer Ledger helps freelancers organize clients, projects and payments. All data you enter (client names and phone numbers, projects, prices, payments, dates and notes) is stored only on your device. We do not operate any server that receives or stores your data, and we never sell or share data.</p>
+<p>Daftar – Designer Ledger helps freelancers organize clients, projects and payments. All data you enter (client names and phone numbers, projects, prices, payments, dates and notes) is stored on your device and, if you sign in with Google, in your own Google Drive. We do not operate any server that receives or stores your data, and we never sell or share data.</p>
+<p><b>Sign in with Google (optional):</b> to sync your devices the app requests a single permission, <b>drive.appdata</b>, which lets it create and read only its own files in a hidden app folder in your Google Drive. It cannot see any other files and does not request your profile or contacts. Data travels directly from your device to your Drive. A small sign-in server only exchanges Google's sign-in code for an access key and refreshes it; it never sees your data and stores nothing. The access key is kept on your device and in the app's hidden Drive folder so your other devices can sign in. The app's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
 <p><b>Google Sheets (optional):</b> if you connect a sheet, your data is sent directly from your device to a spreadsheet, script and calendar that you own in your Google account. It never passes through our servers.</p>
 <p><b>WhatsApp messages:</b> messages you paste or share into the app are processed on your device only, to extract agreement details, and are not sent anywhere.</p>
 <p><b>Exchange rates:</b> the app requests public exchange rates from open.er-api.com. The request contains only your base currency code.</p>
-<p><b>Deleting data:</b> delete projects inside the app, or uninstall the app / clear its storage to remove everything. Sheet and calendar data is deleted from your Google account.</p>
+<p><b>Deleting data:</b> delete projects inside the app, or uninstall the app / clear its storage to remove everything. To delete your Drive copy use Settings → Link my devices → Sign out → "Sign out and delete my Drive copy", or Google Drive → Settings → Manage apps. You can revoke access anytime at myaccount.google.com/permissions. Sheet and calendar data is deleted from your Google account.</p>
 <p><b>Contact:</b> <span class="muted">CONTACT_EMAIL</span></p>
 </section>
 </main>

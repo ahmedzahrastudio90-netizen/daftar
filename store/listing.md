@@ -25,10 +25,10 @@
 تذكير قبل الموعد بالأيام التي تختارها، وعداد يوضح المتبقي والمتأخر، وتنبيهات على تقويم جوجل في العاشرة صباحاً.
 
 ◆ يعمل بدون إنترنت
-بياناتك محفوظة على جهازك، وتُزامن مع شيت جوجل الخاص بك عند توفر الاتصال إن أردت، وتُنزَّل كملف Excel في أي وقت.
+بياناتك محفوظة على جهازك، وبضغطة «الدخول بحساب جوجل» تتزامن على تليفونك والكمبيوتر خلال ثواني، وتُنزَّل كملف Excel في أي وقت.
 
 ◆ خصوصيتك أولاً
-لا حسابات ولا خوادم. بياناتك على جهازك وفي حسابك على جوجل فقط.
+بياناتك على جهازك وفي فولدر مخفي خاص بالتطبيق في جوجل درايف بتاعك فقط. لا نخزن أي بيانات على خوادمنا.
 
 **التصنيف:** Business (الأعمال)
 **الوسوم المقترحة:** فريلانس، مصمم جرافيك، فواتير، عملاء، مشاريع، حسابات
@@ -47,14 +47,14 @@ Daftar – Designer Ledger is one place to run your freelance design work: clien
 ◆ Multi-currency accounting: EGP, SAR, USD, AED, KWD, EUR. Each payment is locked at its day's exchange rate, with monthly and yearly income in your main currency. Transfers that haven't reached your account are tracked separately.
 ◆ From WhatsApp to your ledger: paste the agreement messages or share the chat, and the app extracts client, price, deposit and deadline automatically, even offline.
 ◆ Never miss a deadline: reminders days before delivery, overdue counters, and Google Calendar alerts at 10 AM.
-◆ Works offline, with optional sync to your own Google Sheet and Excel export.
-◆ Private by design: no accounts, no servers. Your data stays on your device and in your Google account.
+◆ Works offline, with one-tap Google sign-in to sync your phone and computer, and Excel export.
+◆ Private by design: your data stays on your device and in a hidden app folder in your own Google Drive. We store nothing on our servers.
 
 ## Data safety (استمارة أمان البيانات)
 
 | السؤال | الإجابة |
 |---|---|
-| هل يجمع التطبيق أو يشارك بيانات مستخدمين؟ | **لا.** البيانات تُخزن على الجهاز فقط، والمزامنة تتم مع حساب جوجل الخاص بالمستخدم مباشرة. |
+| هل يجمع التطبيق أو يشارك بيانات مستخدمين؟ | **لا.** البيانات تُخزن على الجهاز، والمزامنة تتم مباشرة مع جوجل درايف الخاص بالمستخدم (صلاحية drive.appdata فقط). خادم الدخول لا يرى البيانات ولا يخزن شيئاً. |
 | هل البيانات مشفرة أثناء النقل؟ | نعم (HTTPS). |
 | هل يمكن للمستخدم طلب حذف البيانات؟ | نعم، من داخل التطبيق أو بمسح بيانات التطبيق. |
 | رابط سياسة الخصوصية | `https://<رابط التطبيق>/privacy.html` |

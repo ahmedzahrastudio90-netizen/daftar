@@ -187,7 +187,9 @@
   // ---------- Google Sheet sync ----------
   let syncing = false, syncErr = "", syncTimer = null;
   function scheduleSync(ms){ clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms ?? 700); }
+  const linked = () => !!(settings.drive || settings.sheetUrl);
   async function sync(manual){
+    if (settings.drive) return driveSync(manual);
     if (!settings.sheetUrl){ if (manual) toast("أدخل رابط الشيت أولاً"); return; }
     if (!navigator.onLine){ syncErr = ""; renderSync(); if (manual) toast("لا يوجد اتصال بالإنترنت. التغييرات محفوظة على الجهاز وستُرسل عند عودة الاتصال."); return; }
     if (syncing) return;
@@ -214,20 +216,155 @@
       if (manual) toast(syncErr === "كلمة المرور غير صحيحة" ? "كلمة المرور لا تطابق المسجّلة في الشيت" : "تعذّر الاتصال بالشيت. تأكد من الرابط.");
     } finally { syncing = false; if (pulled || manual) render(); else renderSync(); }
   }
+  // ---------- Google sign-in + private Drive sync ----------
+  // Data goes from this device straight to a hidden app folder in the user's own Google Drive.
+  // The small auth server only swaps the sign-in code for a key and refreshes it; it stores nothing.
+  const G = {
+    client: "479845573465-cq6u247cdi3oa263bvlh35hvleop051t.apps.googleusercontent.com",
+    auth: "https://daftar-auth.ahmedzahrastudio90.workers.dev",
+    scope: "https://www.googleapis.com/auth/drive.appdata",
+    api: "https://www.googleapis.com/drive/v3/files",
+    up: "https://www.googleapis.com/upload/drive/v3/files",
+    file: "daftar.json"
+  };
+  const gauth = Object.assign({rt:"", at:"", exp:0, email:"", fileId:"", ver:""}, LS.get("ledger.gauth", {}));
+  const saveGauth = () => LS.set("ledger.gauth", gauth);
+  let gBusy = false;
+  const gsiReady = () => loadScript("https://accounts.google.com/gsi/client");
+  async function authPost(path, body){
+    const r = await fetch(G.auth + path, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.access_token) throw new Error(r.status === 401 ? "relogin" : "auth");
+    return d;
+  }
+  async function accessToken(force){
+    if (!force && gauth.at && Date.now() < gauth.exp - 60000) return gauth.at;
+    if (!gauth.rt) throw new Error("relogin");
+    const d = await authPost("/refresh", {refresh_token: gauth.rt});
+    gauth.at = d.access_token; gauth.exp = Date.now() + n(d.expires_in || 3600) * 1000; saveGauth();
+    return gauth.at;
+  }
+  async function gfetch(url, opt = {}, retry = true){
+    const r = await fetch(url, {...opt, headers: {...(opt.headers || {}), Authorization: "Bearer " + await accessToken()}});
+    if (r.status === 401 && retry){ gauth.at = ""; return gfetch(url, opt, false); }
+    if (r.status === 404 && url.includes(gauth.fileId || "§")){ gauth.fileId = ""; gauth.ver = ""; saveGauth(); throw new Error("gone"); }
+    if (!r.ok) throw new Error("drive");
+    return r;
+  }
+  function signIn(){
+    gBusy = true; render();
+    gsiReady().then(() => {
+      google.accounts.oauth2.initCodeClient({
+        client_id: G.client, scope: G.scope, ux_mode: "popup", select_account: true,
+        callback: async (res) => {
+          try {
+            if (!res || !res.code) throw new Error("cancel");
+            const d = await authPost("/token", {code: res.code});
+            Object.assign(gauth, {rt: d.refresh_token || "", at: d.access_token, exp: Date.now() + n(d.expires_in || 3600) * 1000, fileId: "", ver: ""});
+            // Google gives the long-lived key only on the first device; keep it in the app's hidden Drive folder for your other devices
+            if (d.refresh_token) await keyFile(d.refresh_token).catch(() => {});
+            else gauth.rt = await keyFile().catch(() => "");
+            if (!gauth.rt) throw new Error("auth");
+            try { const u = await (await gfetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")).json(); gauth.email = (u.user && u.user.emailAddress) || ""; } catch(e){}
+            saveGauth();
+            settings.drive = true; settings.sheetUrl = ""; settings.token = ""; saveSettings();
+            for (const j of Object.values(all)) j.dirty = true; persist();
+            gBusy = false; syncErr = "";
+            await driveSync();
+            toast(syncErr ? syncErr : "تم الدخول ✓ وبياناتك بتتزامن على كل أجهزتك");
+          } catch(e){ gBusy = false; toast(e.message === "cancel" ? "اتلغى الدخول" : "تعذّر الدخول. جرّب تاني."); }
+          render();
+        },
+        error_callback: (e) => { gBusy = false; render(); if (e && e.type === "popup_failed_to_open") toast("المتصفح منع نافذة جوجل. اسمح بالنوافذ المنبثقة وجرّب تاني."); }
+      }).requestCode();
+    }).catch(() => { gBusy = false; render(); toast("محتاج نت علشان تسجّل الدخول"); });
+  }
+  async function signOut(wipe){
+    try {
+      if (wipe){
+        const list = await (await gfetch(G.api + "?spaces=appDataFolder&fields=files(id)")).json();
+        for (const f of list.files || []) await gfetch(G.api + "/" + f.id, {method:"DELETE"});
+      }
+      if (gauth.rt) fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(gauth.rt), {method:"POST"}).catch(() => {});
+    } catch(e){ if (wipe){ toast("تعذّر مسح النسخة. تأكد من النت وجرّب تاني."); return; } }
+    for (const k of Object.keys(gauth)) gauth[k] = k === "exp" ? 0 : "";
+    LS.set("ledger.gauth", {}); settings.drive = false; settings.lastSync = 0; saveSettings(); syncErr = "";
+    toast(wipe ? "تم الخروج ومسح نسختك من جوجل درايف" : "تم الخروج. بياناتك لسه على الجهاز ده."); render();
+  }
+  async function keyFile(put){
+    const q = encodeURIComponent("name='key.json' and trashed=false");
+    const f = ((await (await gfetch(G.api + "?spaces=appDataFolder&q=" + q + "&fields=files(id)")).json()).files || [])[0];
+    if (put === undefined) return f ? ((await (await gfetch(G.api + "/" + f.id + "?alt=media")).json()).rt || "") : "";
+    const body = JSON.stringify({rt: put});
+    if (f) return gfetch(G.up + "/" + f.id + "?uploadType=media", {method: "PATCH", headers: {"Content-Type": "application/json"}, body});
+    const fd = new FormData();
+    fd.append("metadata", new Blob([JSON.stringify({name: "key.json", parents: ["appDataFolder"]})], {type: "application/json"}));
+    fd.append("file", new Blob([body], {type: "application/json"}));
+    return gfetch(G.up + "?uploadType=multipart&fields=id", {method: "POST", body: fd});
+  }
+  async function driveFile(){
+    if (gauth.fileId) return gauth.fileId;
+    const q = encodeURIComponent("name='" + G.file + "' and trashed=false");
+    const list = await (await gfetch(G.api + "?spaces=appDataFolder&q=" + q + "&orderBy=createdTime&fields=files(id,version)")).json();
+    if (list.files && list.files[0]){ gauth.fileId = list.files[0].id; saveGauth(); return gauth.fileId; }
+    const fd = new FormData();
+    fd.append("metadata", new Blob([JSON.stringify({name: G.file, parents: ["appDataFolder"], mimeType: "application/json"})], {type: "application/json"}));
+    fd.append("file", new Blob([JSON.stringify({v: 1, records: {}})], {type: "application/json"}));
+    const f = await (await gfetch(G.up + "?uploadType=multipart&fields=id", {method: "POST", body: fd})).json();
+    gauth.fileId = f.id; gauth.ver = ""; saveGauth(); return f.id;
+  }
+  async function driveSync(manual){
+    const retried = manual && manual.retried; manual = manual === true;
+    if (!navigator.onLine){ syncErr = ""; renderSync(); if (manual) toast("لا يوجد اتصال بالإنترنت. التغييرات محفوظة على الجهاز وستُرسل عند عودة الاتصال."); return; }
+    if (syncing) return;
+    syncing = true; renderSync(); let pulled = false, again = false;
+    try {
+      const id = await driveFile();
+      const dirty = Object.values(all).some(j => j.dirty);
+      const meta = await (await gfetch(G.api + "/" + id + "?fields=version")).json();
+      if (dirty || meta.version !== gauth.ver){
+        const remote = (await (await gfetch(G.api + "/" + id + "?alt=media")).json().catch(() => ({}))).records || {};
+        for (const r of Object.values(remote)){
+          if (!r || typeof r.id !== "string") continue;
+          const l = all[r.id];
+          if (!l || n(r.updatedAt) > n(l.updatedAt)){ all[r.id] = {...r}; delete all[r.id].dirty; pulled = true; }
+        }
+        const ahead = Object.values(all).some(l => !remote[l.id] || n(l.updatedAt) > n(remote[l.id].updatedAt));
+        let ver = meta.version;
+        if (ahead){
+          const stamp = Object.fromEntries(Object.values(all).map(l => [l.id, l.updatedAt]));
+          const records = Object.fromEntries(Object.values(all).map(l => { const c = {...l}; delete c.dirty; return [l.id, c]; }));
+          const out = await (await gfetch(G.up + "/" + id + "?uploadType=media&fields=version", {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({v: 1, records})})).json();
+          ver = out.version;
+          for (const [k, ts] of Object.entries(stamp)) if (all[k] && all[k].updatedAt === ts) delete all[k].dirty;
+        } else for (const l of Object.values(all)) delete l.dirty;
+        gauth.ver = ver; saveGauth();
+        persist(); refreshJobs();
+      }
+      settings.lastSync = Date.now(); saveSettings(); syncErr = "";
+      if (manual) toast("تمت المزامنة ✓");
+    } catch(e){
+      if (e.message === "gone" && !retried) again = true;
+      else syncErr = e.message === "relogin" ? "سجّل الدخول بجوجل تاني" : "تعذّر الاتصال بجوجل درايف";
+      if (!again && manual) toast(syncErr);
+    } finally { syncing = false; if (pulled || manual) render(); else renderSync(); }
+    if (again) return driveSync({retried: true});
+  }
+
   window.addEventListener("online", () => { renderSync(); scheduleSync(300); fetchRates(); });
   window.addEventListener("offline", renderSync);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleSync(300); });
   // while the app is open, check for changes from your other devices every 10 seconds
-  setInterval(() => { if (!document.hidden && settings.sheetUrl && !syncing) sync(); }, 10000);
+  setInterval(() => { if (!document.hidden && linked() && !syncing) sync(); }, 10000);
 
   function syncState(){
     const pending = Object.values(all).some(j=>j.dirty);
-    if (!settings.sheetUrl) return {c:"off", t:"محفوظ على الجهاز"};
+    if (!linked()) return {c:"off", t:"محفوظ على الجهاز"};
     if (!navigator.onLine) return {c:"off", t: pending ? "غير متصل · ستتم المزامنة لاحقاً" : "غير متصل"};
     if (syncing) return {c:"busy", t:"جارٍ المزامنة…"};
     if (syncErr) return {c:"err", t: syncErr};
     if (pending) return {c:"busy", t:"في انتظار المزامنة"};
-    return {c:"ok", t:"متزامن مع الشيت"};
+    return {c:"ok", t: settings.drive ? "متزامن مع حسابك على جوجل" : "متزامن مع الشيت"};
   }
   function renderSync(){
     const s = syncState();
@@ -1160,9 +1297,24 @@
     try { await loadScript("lib/qrcode.js"); const q = qrcode(0, "M"); q.addData(pairLink()); q.make(); el.innerHTML = q.createSvgTag({cellSize:5, margin:3, scalable:true}); }
     catch(e){ el.textContent = "تعذّر عرض الكود"; }
   }
+  const gLogo = () => { const sp = document.createElement("span"); sp.className = "g-logo"; sp.innerHTML = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>'; return sp; };
   function linkPanel(){
     const st = syncState();
-    const head = h("div",{class:"panel-h"}, h("h2",null,"ربط أجهزتي"), settings.sheetUrl ? h("span",{class:"cd " + (st.c==="ok"?"c-done":st.c==="err"?"c-late":"c-ok")}, st.t) : null);
+    const head = h("div",{class:"panel-h"}, h("h2",null,"ربط أجهزتي"), linked() ? h("span",{class:"cd " + (st.c==="ok"?"c-done":st.c==="err"?"c-late":"c-ok")}, st.t) : null);
+    const gBtn = (label) => h("button",{class:"btn primary g-btn",type:"button",disabled:gBusy,onclick:signIn}, gLogo(), gBusy ? "لحظة…" : label);
+    if (settings.drive){
+      return h("section",{class:"panel"}, head, h("div",null,
+        h("p",null,"✓ داخل بحساب جوجل" + (gauth.email ? ": " : ""), gauth.email ? h("b",{dir:"ltr"}, gauth.email) : null),
+        h("p",{class:"note"},"على أي جهاز تاني: افتح دفتر المصمم، واضغط «الدخول بحساب جوجل» بنفس الحساب. أي تعديل هيظهر على الكل خلال ثواني."),
+        syncErr === "سجّل الدخول بجوجل تاني" ? h("div",{class:"row-btns"}, gBtn("الدخول تاني"))
+          : h("div",{class:"row-btns"}, h("button",{class:"btn",type:"button",onclick:()=>sync(true)},"مزامنة الآن")),
+        settings.lastSync ? h("p",{class:"hint"}, "آخر مزامنة: " + new Date(settings.lastSync).toLocaleString("ar-EG",{dateStyle:"medium",timeStyle:"short"})) : null,
+        h("details",{class:"more"}, h("summary",null,"تسجيل الخروج"),
+          h("p",{class:"note"},"بياناتك هتفضل على الجهاز ده، بس التعديلات مش هتتزامن مع أجهزتك التانية."),
+          h("div",{class:"row-btns"},
+            h("button",{class:"btn sm ghost",type:"button",onclick:()=>signOut(false)},"خروج"),
+            h("button",{class:"btn sm ghost danger",type:"button",onclick:()=>{ if (confirm("هتتمسح نسخة بياناتك من جوجل درايف، وأجهزتك التانية مش هتتزامن تاني. البيانات اللي على الجهاز ده هتفضل. متأكد؟")) signOut(true); }},"خروج ومسح نسختي من درايف")))));
+    }
     if (settings.sheetUrl){
       const qrBox = h("div",{class:"qr"}); if (lk.showQR) renderQR(qrBox);
       return h("section",{class:"panel"}, head, h("div",null,
@@ -1181,11 +1333,14 @@
           h("p",{class:"note"},"بياناتك هتفضل على الجهاز ده وفي الشيت، بس التعديلات مش هتتزامن تاني."),
           h("button",{class:"btn sm ghost danger",type:"button",onclick:()=>{ settings.sheetUrl=""; settings.token=""; settings.syncCursor=0; saveSettings(); toast("تم فك الربط"); render(); }},"فك الربط"))));
     }
-    if (!lk.step) return h("section",{class:"panel"}, head, h("div",null,
-      h("p",null,"اربط تليفونك والكمبيوتر مرة واحدة، وأي حاجة تضيفها أو تعدّلها في أي مكان تظهر على الكل خلال ثواني. البيانات بتتحفظ في حسابك على جوجل، محدش غيرك يقدر يشوفها."),
-      h("div",{class:"row-btns"},
-        h("button",{class:"btn primary",type:"button",onclick:()=>{lk.step=1;render();}},"أول جهاز: ابدأ الربط"),
-        h("button",{class:"btn",type:"button",onclick:openScan}, "ربط بجهاز موجود"))));
+    if (!lk.step){ gsiReady().catch(() => {}); return h("section",{class:"panel"}, head, h("div",null,
+      h("p",null,"ادخل بحساب جوجل على تليفونك والكمبيوتر، وأي حاجة تضيفها أو تعدّلها في أي مكان تظهر على الكل خلال ثواني."),
+      h("div",{class:"row-btns"}, gBtn("الدخول بحساب جوجل")),
+      h("p",{class:"note"},"🔒 بياناتك بتتحفظ في فولدر مخفي خاص بالتطبيق جوه جوجل درايف بتاعك. محدش غيرك يقدر يشوفها، والتطبيق مايقدرش يشوف أي ملفات تانية عندك."),
+      h("details",{class:"more"}, h("summary",null,"طريقة تانية: شيت جوجل"),
+        h("div",{class:"row-btns"},
+          h("button",{class:"btn sm",type:"button",onclick:()=>{lk.step=1;render();}},"أول جهاز: ابدأ الربط"),
+          h("button",{class:"btn sm",type:"button",onclick:openScan}, "ربط بجهاز موجود"))))); }
     const stepRow = (k, title, body) => h("li",{class:"lk-step" + (lk.step > k ? " done" : lk.step === k ? " on" : "")}, h("b",null, title), body);
     return h("section",{class:"panel"}, head, h("div",null,
       h("p",{class:"note"},"خطوات مرة واحدة بس (حوالي 3 دقايق). خلّيك مسجّل دخول بحساب جوجل."),
@@ -1238,7 +1393,7 @@
   $("scanClose").onclick = () => $("scanDlg").close();
   $("scanPaste").onclick = () => { const v = $("scanCode").value; if (v && applyPair(v)) $("scanDlg").close(); };
   function linkCard(){
-    if (settings.sheetUrl || LS.get("ledger.hideLink", false) || !(jobs.length || expenses.length)) return null;
+    if (linked() || LS.get("ledger.hideLink", false) || !(jobs.length || expenses.length)) return null;
     return h("div",{class:"wa-card",style:"background:var(--grad-soft),var(--card)"},
       h("span",{class:"ic",style:"background:var(--grad);color:#fff"}, icon("i-reg")),
       h("div",{class:"tx"}, h("b",null,"اربط تليفونك والكمبيوتر"), h("span",null,"مرة واحدة، وأي تعديل يظهر على الكل خلال ثواني.")),
@@ -1530,7 +1685,7 @@
           const salt = b64u(crypto.getRandomValues(new Uint8Array(16)));
           settings.lock = {...L, on:true, salt, hash: await sha(salt + ":" + v), fails:0, until:0};
           saveSettings(); setup.step = 0; setup.first = "";
-          toast(settings.sheetUrl ? "تم تفعيل القفل ✓" : "تم تفعيل القفل ✓ — يُفضّل تنزيل نسخة احتياطية");
+          toast(linked() ? "تم تفعيل القفل ✓" : "تم تفعيل القفل ✓ — يُفضّل تنزيل نسخة احتياطية");
           render();
         }});
       return [h("label",{class:"f"}, setup.step === 1 ? "اختر رمزاً من 4 أرقام" : "أعد كتابة الرمز للتأكيد", inp),
