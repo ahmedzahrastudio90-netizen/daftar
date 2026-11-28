@@ -481,6 +481,11 @@
       const at = new Date(y, mo-1, d, hh, mm - 30).getTime();
       if (now < at + 30*60e3) plan(at, () => alertNow("ميتنج بعد نص ساعة", (m.title||"اجتماع") + " الساعة " + fmtTime(m.time), "meet-" + m.id + "-" + m.date + m.time));
     }
+    for (const r of Object.values(all)){
+      if (!r || r.kind !== "ping" || r.deleted) continue;
+      if (now > n(r.at) + 10*60e3){ all[r.id] = {id:r.id, deleted:true, updatedAt:now, dirty:true}; persist(); scheduleSync(); continue; }
+      plan(n(r.at), () => alertNow("ميتنج بعد نص ساعة", "عرض اسكتشات اللوجو — شركة نوفا (إشعار تجريبي)", r.id));
+    }
     const ten = new Date(); ten.setHours(10, 0, 0, 0);
     const today = jobs.filter(j => isOpen(j) && nextDue(j).date === todayStr());
     if (today.length) plan(ten.getTime(), () => alertNow("تسليم النهارده", today.map(j => (j.title||"") + (nextDue(j).label ? " (" + nextDue(j).label + ")" : "") + (j.client ? " — " + j.client : "")).join("\n"), "due-" + todayStr()));
@@ -499,6 +504,14 @@
         const opts = {body, tag:"due-today", icon:"icons/icon-192.png", badge:"icons/icon-192.png", dir:"rtl", lang:"ar"};
         const ttl = meets.length ? "مواعيد اليوم" : "مواعيد تسليم قريبة"; if (reg) reg.showNotification(ttl, opts); else new Notification(ttl, opts); } catch(e){}
     }
+  }
+  // test: a sample alert in 15 seconds on this device and on every device signed in with the same account
+  async function testPing(){
+    if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    const id = "ping-" + newId();
+    all[id] = {id, kind:"ping", at: Date.now() + 15000, updatedAt: Date.now(), dirty: true};
+    persist(); refreshJobs(); scheduleSync(0); scheduleMeetingAlerts();
+    toast(linked() ? "الإشعار هيظهر بعد 15 ثانية هنا وعلى أجهزتك التانية المفتوحة" : "الإشعار هيظهر بعد 15 ثانية", 5000);
   }
   async function enableNotify(){
     if (!("Notification" in window)){ toast("هذا الجهاز لا يدعم إشعارات المتصفح. استخدم تنبيهات Google Calendar."); return; }
@@ -950,10 +963,11 @@
         h("div",null,
           h("p",null,"التذكير قبل موعد التسليم بـ:"),
           h("div",{class:"picks"}, ...[1,2,3,4].map(k => h("button",{type:"button",class:"pick","aria-pressed":String(settings.remindDays===k),onclick:()=>{ settings.remindDays=k; saveSettings(); for (const j of Object.values(all)) if (!j.deleted && j.due) j.dirty = true; persist(); render(); scheduleSync(); }}, dayWord(k)))),
-          h("p",null, h("b",null,"على الهاتف والكمبيوتر: "), "عند ربط الدفتر بالشيت، يُضاف كل موعد تسليم إلى Google Calendar في تقويم «دفتر المصمم»، وتصلك تنبيهات في العاشرة صباحاً يومياً خلال هذه الفترة حتى يوم التسليم، حتى لو كان التطبيق مغلقاً. ويمكنك إضافة ويدجت Google Calendar على شاشة الهاتف أو الكمبيوتر."),
+          h("p",{class:"note"},"التطبيق بيطلّعلك إشعار قبل الميتنج بنص ساعة، والساعة 10 الصبح يوم التسليم، وهو مفتوح أو في الخلفية. ولو عايز تتفكّر والتطبيق مقفول خالص، دوس زرار 📅 وضيف الميعاد لتقويمك."),
           h("div",{class:"row-btns"},
             "Notification" in window && Notification.permission === "granted" ? h("span",{class:"cd c-done"},"✓ إشعارات التطبيق مفعّلة")
               : h("button",{class:"btn sm",type:"button",onclick:enableNotify},"تفعيل إشعارات التطبيق"),
+            h("button",{class:"btn sm primary",type:"button",onclick:testPing}, "🔔 جرّب الإشعار"),
             h("span",{class:"hint"},"وتعرض أيقونة التطبيق عدد المشاريع التي اقترب موعد تسليمها.")))),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"نسخة احتياطية"), h("span",{class:"cd " + (jobs.length && (age===null||age>14) ? "c-soon" : "c-ok")}, last ? "آخر نسخة " + (age === 0 ? "اليوم" : "من " + dayWord(age)) : "لم يتم إنشاء نسخة بعد")),
