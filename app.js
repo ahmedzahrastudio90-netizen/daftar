@@ -811,9 +811,153 @@
   });
 
   function waCard(){
-    return h("button",{class:"wa-bar",type:"button",onclick:()=>openWa()},
-      h("span",{class:"ic"}, icon("i-wa")), h("b",null,"الصق اتفاق من واتساب"), icon("i-chev","chev"));
+    return h("div",{class:"quick"},
+      h("button",{class:"voice-bar",type:"button",onclick:()=>openVoice()},
+        h("span",{class:"ic"}, icon("i-mic")), h("b",null,"سجّل بصوتك"), h("small",null,"مشروع أو ميتنج")),
+      h("button",{class:"wa-bar",type:"button",onclick:()=>openWa()},
+        h("span",{class:"ic"}, icon("i-wa")), h("b",null,"الصق اتفاق من واتساب"), icon("i-chev","chev")));
   }
+
+  // ---------- voice: say a new project or a meeting, the app fills it in for you ----------
+  const AR_DIG = {"٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9","٫":".","٬":""};
+  const normAr = (t) => String(t || "").replace(/[٠-٩٫٬]/g, c => AR_DIG[c]).replace(/[إأآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[\u064B-\u0652]/g, "").toLowerCase();
+  const WORD_NUM = {"واحد":1,"اتنين":2,"اثنين":2,"تلاته":3,"ثلاثه":3,"اربعه":4,"اربع":4,"خمسه":5,"خمس":5,"سته":6,"ست":6,"سبعه":7,"سبع":7,"تمانيه":8,"ثمانيه":8,"تمن":8,"تسعه":9,"تسع":9,"عشره":10,"عشر":10,"حداشر":11,"اتناشر":12,"خمستاشر":15,"عشرين":20,"تلاتين":30,"خمسين":50,"مية":100,"ميه":100,"ميتين":200,"خمسميه":500,"خمسمية":500};
+  // "12 الف" → 12000, "الفين" → 2000, "2 الف ونص" → 2500, "خمسه الاف" → 5000
+  function voiceNums(t){
+    t = t.replace(/(\d),(\d{3})/g, "$1$2").replace(/(^|\s)ب(?=\d|الف|الاف|الفين)/g, "$1ب ");
+    for (const [w, v] of Object.entries(WORD_NUM)) t = t.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$)", "g"), "$1" + v);
+    t = t.replace(/(\d+(?:\.\d+)?)\s*(?:الف|الاف|آلاف|k)\s*(?:و\s*نص|ونص)/g, (_, a) => String(Math.round(n(a) * 1000 + 500)));
+    t = t.replace(/(\d+(?:\.\d+)?)\s*(?:الف|الاف|آلاف|k)(?![a-z\u0600-\u06FF])/g, (_, a) => String(Math.round(n(a) * 1000)));
+    t = t.replace(/(^|\s)الفين\s*و\s*نص(?=\s|$)/g, "$12500").replace(/(^|\s)الف\s*و\s*نص(?=\s|$)/g, "$11500").replace(/(^|\s)الفين(?=\s|$)/g, "$12000").replace(/(^|\s)الف(?=\s|$)/g, "$11000").replace(/(\d+)\s*مليون/g, (_, a) => String(n(a) * 1e6));
+    return t;
+  }
+  const WD = {"السبت":6,"الحد":0,"الاحد":0,"الاتنين":1,"الاثنين":1,"التلات":2,"الثلاثاء":2,"التلاتاء":2,"الاربع":3,"الاربعاء":3,"الخميس":4,"الجمعه":5};
+  function voiceDate(t){
+    const today = todayStr();
+    if (/بعد\s*بكره|بعد\s*بكرا/.test(t)) return addDays(today, 2);
+    if (/بكره|بكرا|غدا/.test(t)) return addDays(today, 1);
+    if (/النهارده|انهارده|اليوم/.test(t)) return today;
+    let m = t.match(/بعد\s*(\d+)\s*(يوم|ايام|اسبوع|اسابيع|شهر)/) || t.match(/خلال\s*(\d+)\s*(يوم|ايام|اسبوع|اسابيع|شهر)/);
+    if (m){ const k = n(m[1]); return addDays(today, /اسبوع|اسابيع/.test(m[2]) ? k*7 : /شهر/.test(m[2]) ? k*30 : k); }
+    if (/(بعد|خلال)\s*اسبوعين/.test(t)) return addDays(today, 14);
+    if (/(بعد|خلال)\s*اسبوع/.test(t)) return addDays(today, 7);
+    if (/(بعد|خلال)\s*شهر/.test(t)) return addDays(today, 30);
+    m = t.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})/);
+    if (m){ const y = new Date().getFullYear(), d = String(m[1]).padStart(2,"0"), mo = String(m[2]).padStart(2,"0"); let ds = y + "-" + mo + "-" + d; if (ds < today) ds = (y+1) + "-" + mo + "-" + d; return ds; }
+    const MO = ["يناير","فبراير","مارس","ابريل","مايو","يونيو","يوليو","اغسطس","سبتمبر","اكتوبر","نوفمبر","ديسمبر"];
+    m = t.match(/(\d{1,2})\s*(يناير|فبراير|مارس|ابريل|مايو|يونيو|يوليو|اغسطس|سبتمبر|اكتوبر|نوفمبر|ديسمبر)/);
+    if (m){ const y = new Date().getFullYear(), mo = String(MO.indexOf(m[2]) + 1).padStart(2,"0"); let ds = y + "-" + mo + "-" + String(m[1]).padStart(2,"0"); if (ds < today) ds = (y+1) + ds.slice(4); return ds; }
+    for (const [w, dow] of Object.entries(WD)) if (new RegExp("(يوم\\s*)?" + w + "(\\s|$)").test(t)){ const d0 = new Date(); let k = (dow - d0.getDay() + 7) % 7; if (k === 0) k = 7; return addDays(today, k); }
+    return "";
+  }
+  function voiceTime(t){
+    const m = t.match(/(?:الساعه|ساعه|الساعة)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(ونص|و\s*نص|وربع|و\s*ربع|الا\s*ربع|الا\s*تلت|وتلت)?/) || t.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?=\s|$)/);
+    if (!m) return "";
+    let hh = n(m[1]), mm = m[2] ? n(m[2]) : 0;
+    const f = (m[3] || "").replace(/\s/g, "");
+    if (f === "ونص") mm = 30; else if (f === "وربع") mm = 15; else if (f === "وتلت") mm = 20; else if (f === "الاربع"){ hh -= 1; mm = 45; } else if (f === "الاتلت"){ hh -= 1; mm = 40; }
+    const am = /الصبح|صباحا|الفجر|بدري|(?:^|\s)ص(?:\s|$)|(?:^|\s)am(?:\s|$)/.test(t), pm = /الضهر|الظهر|العصر|المغرب|العشا|بالليل|مساء|مساءا|بليل|(?:^|\s)م(?:\s|$)|(?:^|\s)pm(?:\s|$)/.test(t);
+    if (pm && hh < 12) hh += 12; else if (!am && hh >= 1 && hh <= 7) hh += 12;
+    if (hh >= 24 || mm >= 60) return "";
+    return String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
+  }
+  function voiceCur(t){ return /دولار|\$|usd/.test(t) ? "USD" : /ريال|سعودي/.test(t) ? "SAR" : /درهم|اماراتي/.test(t) ? "AED" : /دينار|كويتي/.test(t) ? "KWD" : /يورو/.test(t) ? "EUR" : /جنيه|مصري/.test(t) ? "EGP" : ""; }
+  function numAfter(t, re){ const m = t.match(new RegExp("(?:" + re + ")\\s*(?:هي|هو|ب|بـ|=|:)?\\s*(\\d+(?:\\.\\d+)?)")); return m ? n(m[1]) : null; }
+  function findJob(t){
+    let best = null, score = 0;
+    for (const j of jobs){
+      for (const [txt, w] of [[j.title, 2], [j.client, 3]]){
+        const k = normAr(txt).trim(); if (k.length < 2) continue;
+        if (t.includes(k) && k.length * w > score){ best = j; score = k.length * w; }
+        else for (const part of k.split(/\s+/)) if (part.length >= 3 && t.includes(part) && part.length * w * .7 > score){ best = j; score = part.length * w * .7; }
+      }
+    }
+    return best && (isOpen(best) || score > 6) ? best : best;
+  }
+  const MEET_WORDS = {ideas:/افكار|فكره|فكرة/, sketch:/اسكتش|سكتش|سكيتش|تجارب/, dir:/دايركشن|direction/, strategy:/استراتيج|ستراتيج/, final:/عرض الشغل|الشغل النهائي|فاينال|تسليم/, client:/العميل طالب|طالب ميتنج|طلب ميتنج|عايز يقابل/};
+  function understand(raw){
+    const t = voiceNums(normAr(raw));
+    if (/اجتماع|ميتنج|ميتينج|ميتن|مقابله|كول|call|meeting|زوم|zoom/.test(t)){
+      const j = findJob(t);
+      let kind = ""; for (const [k, re] of Object.entries(MEET_WORDS)) if (re.test(t)){ kind = k; break; }
+      const date = voiceDate(t) || todayStr(), time = voiceTime(t) || "12:00";
+      return {type:"meeting", j, kind, date, time};
+    }
+    const p = {};
+    p.currency = voiceCur(t) || settings.currency;
+    p.deposit = numAfter(t, "دفعه اولي|دفعة اولي|اول دفعه|عربون|مقدم|دفع|حول|حوّل|استلمت|نزل");
+    p.price = numAfter(t, "حسابها|حسابه|حسابهم|الحساب|سعرها|سعره|السعر|بسعر|التمن|تمنها|قيمتها|المبلغ|اجمالي|الاجمالي|بمبلغ|ب|بـ");
+    if (p.price == null){ const nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(x => x >= 50 && x !== p.deposit); if (nums.length) p.price = Math.max(...nums); }
+    if (p.deposit != null && p.price != null && p.deposit > p.price){ const x = p.price; p.price = p.deposit; p.deposit = x; }
+    const tt = t.split(/مراحل/)[0];
+    const types = TYPES.filter(x => x !== "أخرى" && tt.includes(normAr(x).replace(/\s*\/\s*/g, "/").replace("ui/ux", "ui")));
+    if (/سوشيال|سوشال/.test(tt) && !types.includes("سوشيال ميديا")) types.push("سوشيال ميديا");
+    if (/هويه|براند|branding/.test(tt) && !types.includes("هوية بصرية")) types.push("هوية بصرية");
+    if (/باكدج|باكيدج|تغليف|علب/.test(tt) && !types.includes("تغليف")) types.push("تغليف");
+    p.types = types;
+    // client: after "لشركه / للعميل / لـ / باسم / مع / عميل"
+    const STOP = "(?=\\s+ب(?:[أا]لف|[أا]لاف|\\d)|\\s+(?:ب|بـ|حساب|حسابها|حسابه|سعر|سعرها|بسعر|التمن|دفع|دفعة|دفعه|عربون|مقدم|والتسليم|التسليم|تسليم|والمده|المده|خلال|بعد|يوم|مراحل|بمبلغ)(?:\\s|$)|\\s*[\\d،,.]|$)";
+    const rawN = raw.replace(/[٠-٩]/g, c => AR_DIG[c]).replace(/(^|\s)لل(?=\S)/g, "$1ل ال");
+    let cm = rawN.match(new RegExp("(?:^|\\s)(?:لشركة|لشركه|للعميل|باسم|اسمه|اسمها|العميل|عميل|شركة|شركه|مع)\\s+([^\\d،,.\\n]+?)" + STOP))
+      || rawN.match(new RegExp("(?:^|\\s)لـ?\\s*(?!وجو|و\\s)([^\\s\\d،,.][^\\d،,.\\n]*?)" + STOP));
+    p.client = cm ? cm[1].replace(/^(?:ال)?(?:شركة|شركه)\s+/, "").trim().split(/\s+/).slice(0, 4).join(" ") : "";
+    if (p.client && TYPES.some(x => normAr(p.client) === normAr(x))) p.client = "";
+    p.title = types.length ? types.join(" + ") + (p.client ? " " + p.client : "") : (p.client ? "مشروع " + p.client : "");
+    const dueM = t.match(/(?:تسليم|التسليم|هسلم|نسلم|الديدلاين|ديدلاين|مده|المده|خلال|بعد)[^\n]*/);
+    p.due = dueM ? voiceDate(dueM[0]) : "";
+    const ph = t.match(/مراحل\s*(?::)?\s*([^\n]+?)(?=\s+(?:حساب|سعر|دفع|عربون|التسليم|تسليم)|$)/);
+    if (ph){
+      const names = ph[1].split(/\s*(?:،|,|\sو(?=\S)|\sثم\s|\sبعدين\s)\s*/).map(x => x.trim()).filter(x => x && x.length < 30).slice(0, 8);
+      if (names.length > 1){ let st = todayStr(); const span = p.due ? Math.max(1, Math.round(daysBetween(st, p.due) / names.length)) : 7;
+        p.phases = names.map((x, i) => { const s0 = st; st = addDays(st, span); return {id:newId(), title:(TYPES.find(T => normAr(T) === x) || x), start:s0, due:i === names.length - 1 && p.due ? p.due : st}; }); }
+    }
+    return {type:"project", p, raw};
+  }
+  function actOnVoice(raw){
+    const u = understand(raw);
+    if (u.type === "meeting"){
+      if (!u.j){ toast("مالقيتش المشروع. قول اسم العميل أو المشروع مع الميتنج.", 5000); return; }
+      openSheet(u.j.id);
+      meetDraft = {title: (u.kind ? kindName(u.kind) + " — " : "اجتماع — ") + (u.j.client || u.j.title || ""), date: u.date, time: u.time, kind: u.kind};
+      renderSheet();
+      setTimeout(() => { const f = $("mTitle")?.closest("form"); if (f){ if (u.kind){ f.dataset.kind = u.kind; f.querySelectorAll(".kind-picks .pick").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === kindName(u.kind)))); } f.scrollIntoView({block:"center", behavior:"smooth"}); } }, 60);
+      toast("راجع الميتنج واضغط حفظ ✓", 4000);
+      return;
+    }
+    const p = u.p;
+    openForm(null, {client:p.client, title:p.title, price:p.price ?? "", currency:p.currency, deposit:p.deposit || "", due:p.due, start:todayStr(), types:p.types, phases:p.phases || [], notes:"🎤 " + raw});
+    toast("راجع البيانات واضغط حفظ ✓", 4000);
+  }
+  let rec = null, vcFinal = "", vcLive = "";
+  function openVoice(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR){ toast("المتصفح ده مش بيدعم الكلام. جرّب Chrome أو Edge أو Safari.", 5000); return; }
+    const d = $("voiceDlg"); vcFinal = ""; vcLive = "";
+    $("vcText").textContent = ""; $("vcState").textContent = "بسمعك…"; $("vcHint").hidden = false;
+    d.querySelector(".vc").classList.add("on");
+    openDlg(d);
+    try { rec = new SR(); } catch(e){ toast("مقدرتش أشغّل المايك"); d.close(); return; }
+    rec.lang = "ar-EG"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      let fin = "", live = "";
+      for (let i = 0; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal) fin += r[0].transcript + " "; else live += r[0].transcript; }
+      vcFinal = fin; vcLive = live; $("vcText").textContent = (fin + live).trim(); $("vcHint").hidden = true;
+    };
+    rec.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { toast("اسمح للتطبيق يستخدم المايك من إعدادات المتصفح", 5000); d.close(); } else if (e.error === "no-speech") $("vcState").textContent = "مسمعتش حاجة… اتكلم تاني"; else if (e.error === "network") { toast("الكلام محتاج نت", 4000); d.close(); } };
+    rec.onend = () => { d.querySelector(".vc").classList.remove("on"); if (d.open && d._finish) finishVoice(); else if (d.open) { $("vcState").textContent = "اضغط «خلصت» لما تخلّص"; } };
+    try { rec.start(); } catch(e){}
+  }
+  function finishVoice(){
+    const d = $("voiceDlg"), text = (vcFinal + " " + vcLive).trim();
+    d._finish = false; if (d.open) d.close();
+    if (!text){ toast("مسمعتش حاجة. جرّب تاني."); return; }
+    setTimeout(() => actOnVoice(text), 120);
+  }
+  $("vcDone").onclick = () => { const d = $("voiceDlg"); d._finish = true; try { rec && rec.stop(); } catch(e){} setTimeout(() => { if (d._finish) finishVoice(); }, 900); };
+  $("vcMic").onclick = () => $("vcDone").onclick();
+  $("vcCancel").onclick = () => { const d = $("voiceDlg"); d._finish = false; try { rec && rec.abort(); } catch(e){} d.close(); };
+  $("voiceDlg").addEventListener("close", () => { try { rec && rec.abort(); } catch(e){} });
+  document.querySelectorAll("[data-voice]").forEach(b => b.addEventListener("click", () => openVoice()));
 
   // ---------- jobs ----------
   const matches = (j) => !query || [j.client,j.title,j.phone,typeText(j),j.notes].join(" ").toLowerCase().includes(query.toLowerCase());
@@ -1396,7 +1540,7 @@
             h("div",null, h("b",null,"خلّي موبايلك يفكّرك"), h("span",null,"أضفه لتقويمك، فيجيلك تنبيه قبله بنص ساعة حتى لو التطبيق مقفول.")),
             calButton({...meetingEvent(j, meetingsOf(j).find(m => m.id === justMeet)), key:"tip-" + justMeet}),
             h("button",{class:"btn ghost sm",type:"button","aria-label":"إغلاق",onclick:()=>{ justMeet = ""; renderSheet(); }}, icon("i-x"))) : null,
-          meetDraft ? h("form",{class:"mini",onsubmit:e=>{
+          meetDraft ? h("form",{class:"mini","data-kind":meetDraft.kind || "",onsubmit:e=>{
               e.preventDefault();
               const m = {id:newId(), kind:e.target.dataset.kind || "", title:$("mTitle").value.trim() || "اجتماع", date:$("mDate").value || todayStr(), time:$("mTime").value || "", notes:($("mNotes")?.value || "").trim()};
               const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m]; meetDraft = null;
@@ -1404,7 +1548,7 @@
               save(nx, "تم حفظ الاجتماع ✓");
               if ("Notification" in window && Notification.permission === "default") enableNotify();
             }},
-            kindPicks("mTitle", j.client, ""),
+            kindPicks("mTitle", j.client, meetDraft.kind || ""),
             h("label",{class:"f full"},"العنوان", h("input",{id:"mTitle",value:meetDraft.title,oninput:e=>{meetDraft.title=e.target.value;}})),
             h("label",{class:"f"},"اليوم", h("input",{id:"mDate",type:"date",value:meetDraft.date,oninput:e=>{meetDraft.date=e.target.value;}})),
             h("label",{class:"f"},"الساعة", h("input",{id:"mTime",type:"time",value:meetDraft.time,oninput:e=>{meetDraft.time=e.target.value;}})),
@@ -1935,7 +2079,7 @@
     const sp = $("splash"); let done = false;
     const hide = () => { if (done) return; done = true; sp.classList.add("out");
       setTimeout(() => { document.documentElement.removeAttribute("data-splash"); sp.classList.remove("out"); if (isLocked() && settings.lock.cred) tryBio(); }, 350); };
-    setTimeout(hide, 4500); sp.addEventListener("click", hide);
+    setTimeout(hide, 3500); sp.addEventListener("click", hide);
   }
 
   // ---------- boot ----------

@@ -502,7 +502,7 @@ code.k{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;background:va
 #splash .bar{width:120px;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
 #splash .bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#22D3EE,#A78BFA);transform-origin:right}
 #splash.out{opacity:0;transition:opacity .35s}
-@media (prefers-reduced-motion:no-preference){#splash .bar i{animation:spl 4.5s linear forwards}@keyframes spl{from{transform:scaleX(0)}to{transform:scaleX(1)}}#splash .dua{animation:rise .6s ease-out both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
+@media (prefers-reduced-motion:no-preference){#splash .bar i{animation:spl 3.5s linear forwards}@keyframes spl{from{transform:scaleX(0)}to{transform:scaleX(1)}}#splash .dua{animation:rise .6s ease-out both}@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
 /* lock */
 #lock{display:none}
 :root[data-locked] #lock{display:flex}
@@ -603,6 +603,24 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .rate-line svg{width:14px;height:14px;color:var(--accent)}
 .rate-line.editing{border-style:solid;border-radius:14px;cursor:default;padding:8px 10px}
 .rate-line.editing input{height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font:inherit;background:var(--card);color:var(--ink)}
+.btn.voice{background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(6,182,212,.12)),var(--card);border-color:color-mix(in srgb,#7C3AED 30%,var(--line));color:var(--ink)}
+.btn.voice svg{color:#7C3AED}
+.side .btn.voice{background:rgba(124,58,237,.16);border-color:rgba(167,139,250,.3);color:#E9E5FF}.side .btn.voice svg{color:#C4B5FD}
+.mbar .btn.voice{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff}.mbar .btn.voice svg{color:#C4B5FD}
+.voice-bar{display:flex;align-items:center;gap:12px;width:100%;border:1px solid color-mix(in srgb,#7C3AED 28%,var(--line));background:linear-gradient(135deg,rgba(124,58,237,.12),rgba(6,182,212,.08)),var(--card);border-radius:12px;padding:10px 14px;color:var(--ink);text-align:start;font:inherit;cursor:pointer}
+.voice-bar .ic{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--grad);color:#fff;flex:none}.voice-bar .ic svg{width:18px;height:18px}
+.voice-bar b{flex:1;font-weight:600}.voice-bar small{color:var(--muted);font-size:.8rem}
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:520px){.quick{grid-template-columns:1fr}}
+.voicedlg{border:0;padding:0;background:transparent;max-width:min(520px,calc(100vw - 32px));width:100%}
+.voicedlg::backdrop{background:rgba(8,14,26,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.vc{background:var(--card);color:var(--ink);border-radius:22px;padding:28px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.vc-mic{margin:6px 0 14px;width:84px;height:84px;border-radius:50%;border:0;background:var(--grad);color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 0 0 0 rgba(124,58,237,.45)}
+.vc-mic svg{width:36px;height:36px}
+.vc.on .vc-mic{animation:vpulse 1.4s ease-out infinite}
+@keyframes vpulse{0%{box-shadow:0 0 0 0 rgba(124,58,237,.45)}100%{box-shadow:0 0 0 26px rgba(124,58,237,0)}}
+.vc-text{min-height:3.2em;font-size:1.05rem;font-weight:500;margin:0;line-height:1.8}
+.vc-hint{font-size:.82rem;color:var(--muted);margin:0;line-height:1.8}
 .kind-picks{display:flex;flex-wrap:wrap;gap:6px}
 .kind-picks .pick{padding:6px 12px;font-size:.82rem;border-radius:999px}
 .kind{display:table;margin-bottom:3px;font-style:normal;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:999px;margin-inline-end:6px;vertical-align:1px;background:var(--accent-soft);color:var(--accent)}
@@ -663,6 +681,7 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   <symbol id="i-jobs" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 6.5V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5M3.5 12h17" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
@@ -692,7 +711,7 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
   <div class="bar"><i></i></div>
 </div>
 <script>
-(function(){var D=[["بِسْمِ اللَّهِ، تَوَكَّلْتُ عَلَى اللَّهِ، وَلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ","رواه أبو داود والترمذي"],
+(function(){var D=[["اللَّهُمَّ… وَبَارِكْ لِي فِيمَا أَعْطَيْتَ، وَقِنِي شَرَّ مَا قَضَيْتَ","من دعاء القنوت · رواه أبو داود والترمذي، وصححه الألباني"],
 ["اللَّهُمَّ إِنِّي أَسْأَلُكَ عِلْمًا نَافِعًا، وَرِزْقًا طَيِّبًا، وَعَمَلًا مُتَقَبَّلًا","رواه ابن ماجه"],
 ["اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ، وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ","رواه الترمذي"],
 ["﴿رَبِّ اشْرَحْ لِي صَدْرِي ۝ وَيَسِّرْ لِي أَمْرِي﴾","سورة طه: 25-26"],
@@ -713,6 +732,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
       </div>
     </div>
     <button class="btn primary new" type="button" data-add><svg><use href="#i-plus"/></svg>مشروع جديد</button>
+    <button class="btn voice" type="button" data-voice><svg><use href="#i-mic"/></svg>سجّل بصوتك</button>
     <button class="btn wa" type="button" data-wa><svg><use href="#i-wa"/></svg>استيراد من واتساب</button>
     <nav class="nav" id="sideNav" aria-label="الأقسام"></nav>
     <div class="side-foot"><div class="sync" id="syncSide"><i></i><span>—</span></div></div>
@@ -722,6 +742,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
     <div class="mbar">
       <div class="brand"><svg><use href="#i-reg"/></svg><div><b>دفتر المصمم</b></div></div>
       <div class="sync" id="syncTop"><i></i><span>—</span></div>
+      <button class="btn voice icon-only" type="button" data-voice aria-label="سجّل بصوتك"><svg><use href="#i-mic"/></svg></button>
       <button class="btn wa" type="button" data-wa><svg><use href="#i-wa"/></svg>واتساب</button>
     </div>
     <header class="topbar">
@@ -817,11 +838,20 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
   </div>
 </dialog>
 
+<dialog class="voicedlg" id="voiceDlg" aria-label="سجّل بصوتك">
+  <div class="vc">
+    <button class="vc-mic" type="button" id="vcMic" aria-label="إيقاف"><svg><use href="#i-mic"/></svg></button>
+    <b id="vcState">بسمعك…</b>
+    <p id="vcText" class="vc-text"></p>
+    <p class="vc-hint" id="vcHint">قول مثلاً: «شغلانة جديدة لوجو لشركة نوفا حسابها 5000 دفعة أولى 2000 والتسليم الخميس»<br>أو: «ميتنج بكرة الساعة 5 بخصوص نوفا عرض اسكتشات»</p>
+    <div class="row-btns" style="justify-content:center"><button class="btn primary" type="button" id="vcDone">خلصت</button><button class="btn" type="button" id="vcCancel">إلغاء</button></div>
+  </div>
+</dialog>
 <dialog class="wadlg" id="waDlg" aria-labelledby="waTitle"><div class="wz" id="wa"></div></dialog>
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="parser.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
