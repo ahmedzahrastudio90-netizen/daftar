@@ -1,6 +1,6 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v31";
-const SHELL = ["./", "index.html", "app.js?v=31", "parser.js?v=31", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+const VERSION = "ledger-v32";
+const SHELL = ["./", "index.html", "app.js?v=32", "parser.js?v=32", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
   "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2", "lib/qrcode.js"];
 
@@ -66,25 +66,26 @@ async function checkDue() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const key = today.toISOString().slice(0, 10);
   if (last && (await last.text()) === key) return;
-  const days = Number(daysRes ? await daysRes.text() : 3) || 3;
+  const days = Number(daysRes ? await daysRes.text() : 7) || 7;
   const meetRes = await c.match("meetings");
-  const meets = meetRes ? (await meetRes.json()).filter((m) => m.date === key) : [];
-  const list = (await snap.json()).map((j) => {
-    const [y, m, d] = j.due.split("-").map(Number);
-    return { ...j, k: Math.round((new Date(y, m - 1, d) - today) / 86400000) };
-  }).filter((j) => j.k <= days).sort((a, b) => a.k - b.k);
-  if (!list.length && !meets.length) return;
+  const kOf = (ds) => { const [y, m, d] = String(ds).split("-").map(Number); return Math.round((new Date(y, m - 1, d) - today) / 86400000); };
   const word = (k) => (k === 1 ? "يوم" : k === 2 ? "يومين" : k + " أيام");
-  const line = (j) => (j.k < 0 ? "متأخر " + word(-j.k) : j.k === 0 ? "التسليم اليوم" : j.k === 1 ? "التسليم غداً" : "متبقٍ " + word(j.k)) + ": " + j.title + (j.client ? " — " + j.client : "");
-  await self.registration.showNotification("مواعيد تسليم قريبة", { body: meets.map((m) => "اجتماع " + (m.time || "") + ": " + (m.title || "")).concat(list.slice(0, 4).map(line)).join("\n"), tag: "due-today", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar" });
-  if (self.navigator.setAppBadge) self.navigator.setAppBadge(list.length).catch(() => {});
+  const left = (k) => (k === 0 ? "النهارده" : k === 1 ? "بكرة" : k === 2 ? "بعد بكرة" : "باقي " + word(k));
+  const meets = meetRes ? (await meetRes.json()).map((m) => ({ ...m, k: kOf(m.date) })).filter((m) => m.k >= 0 && m.k <= days) : [];
+  const list = (await snap.json()).map((j) => ({ ...j, k: kOf(j.due) })).filter((j) => j.k <= days);
+  if (!list.length && !meets.length) return;
+  const lines = meets.map((m) => ({ at: m.date + (m.time || "99"), t: (m.k <= 1 ? left(m.k) + (m.time ? " " + m.time : "") + ": " : "") + (m.title || "ميتنج") + (m.client ? " — " + m.client : "") + (m.k > 1 ? " · " + left(m.k) : "") }))
+    .concat(list.map((j) => ({ at: j.due + "00", t: "تسليم «" + j.title + "»" + (j.client ? " — " + j.client : "") + " · " + (j.k < 0 ? "متأخر " + word(-j.k) + "! خلصته؟" : j.k === 0 ? "النهارده! جاهز؟" : j.k === 1 ? "بكرة. خلصت الشغل؟" : left(j.k) + ". ماشي فيه؟") })))
+    .sort((a, b) => a.at.localeCompare(b.at)).slice(0, 6).map((x) => "• " + x.t);
+  await self.registration.showNotification("فكّرتك 🔔", { body: lines.join("\n"), tag: "due-today", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar" });
+  if (self.navigator.setAppBadge) self.navigator.setAppBadge(lines.length).catch(() => {});
   await c.put("last", new Response(key));
 }
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil(self.clients.matchAll({ type: "window" }).then((ws) => {
-    for (const w of ws) if ("focus" in w) { w.navigate("./#jobs"); return w.focus(); }
-    return self.clients.openWindow("./#jobs");
+    for (const w of ws) if ("focus" in w) { w.navigate("./#home"); return w.focus(); }
+    return self.clients.openWindow("./#home");
   }));
 });

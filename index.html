@@ -624,6 +624,16 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .vchip{display:inline-flex;align-items:baseline;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.85rem;font-weight:600}
 .vchip small{color:var(--muted);font-weight:500;font-size:.75rem}
 .vc-hint{font-size:.82rem;color:var(--muted);margin:0;line-height:1.8}
+.digest .panel-h{padding-bottom:6px}
+.dg{list-style:none;margin:0;padding:0 14px 14px;display:flex;flex-direction:column;gap:8px}
+.dg li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--soft);border:1px solid var(--line);font-size:.9rem}
+.dg li .grow{flex:1;min-width:0;cursor:pointer;line-height:1.6}
+.dg-ic{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent-soft);color:var(--accent);font-size:.85rem}
+.dg-ic svg{width:16px;height:16px}
+.dg li.soon{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--card))}
+.dg li.soon .dg-ic{background:var(--warn-soft);color:var(--warn)}
+.dg li.late{border-color:color-mix(in srgb,var(--bad) 40%,var(--line));background:color-mix(in srgb,var(--bad) 6%,var(--card))}
+.dg li.late .dg-ic{background:var(--bad-soft);color:var(--bad)}
 .kind-picks{display:flex;flex-wrap:wrap;gap:6px}
 .kind-picks .pick{padding:6px 12px;font-size:.82rem;border-radius:999px}
 .kind{display:table;margin-bottom:3px;font-style:normal;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:999px;margin-inline-end:6px;vertical-align:1px;background:var(--accent-soft);color:var(--accent)}
@@ -856,7 +866,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="parser.js?v=32"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

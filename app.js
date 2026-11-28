@@ -20,8 +20,9 @@
   const LS = {get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
               set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
   let all = LS.get("ledger.jobs", {});           // id -> job (incl. deleted tombstones)
-  const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:"",
+  const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:7, lastNotify:"",
     hideMoney:false, hideOnOpen:false, splash:"always", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:0, altCur:"USD"}, LS.get("ledger.settings", {}));
+  if (!settings.remindV2){ settings.remindDays = 7; settings.remindV2 = true; }
   if (!settings.splashV2){ if (settings.splash !== "off") settings.splash = "always"; settings.splashV2 = true; }
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
@@ -494,6 +495,42 @@
     if (today.length) plan(ten.getTime(), () => alertNow("تسليم النهارده", today.map(j => (j.title||"") + (nextDue(j).label ? " (" + nextDue(j).label + ")" : "") + (j.client ? " — " + j.client : "")).join("\n"), "due-" + todayStr()));
   }
   setInterval(() => scheduleMeetingAlerts(), 30*60e3);
+  // daily nudge: every meeting and delivery coming up, with a countdown, so nothing sneaks up on you
+  const leftWord = (k) => k === 0 ? "النهارده" : k === 1 ? "بكرة" : k === 2 ? "بعد بكرة" : "باقي " + dayWord(k);
+  function digestItems(){
+    const out = [], win = Math.max(1, n(settings.remindDays) || 7);
+    for (const {j, m} of allMeets()){
+      if (m.done || !m.date) continue; const k = daysUntil(m.date); if (k < 0 || k > win) continue;
+      const who = j ? (j.client || j.title || "") : (m.with || "");
+      out.push({kind:"meet", k, at:m.date + (m.time || "99"), j, m,
+        text: (k <= 1 ? leftWord(k) + (m.time ? " الساعة " + fmtTime(m.time) : "") + ": " : "") + (m.title || "ميتنج") + (who && !(m.title||"").includes(who) ? " — " + who : "") + (k > 1 ? " · " + leftWord(k) : "")});
+    }
+    for (const j of jobs){
+      if (!isOpen(j)) continue; const nd = nextDue(j); if (!nd.date) continue; const k = daysUntil(nd.date); if (k > win) continue;
+      const what = "تسليم «" + (nd.label || j.title || "") + "»" + (nd.label && j.title ? " (" + j.title + ")" : "") + (j.client ? " — " + j.client : "");
+      out.push({kind:"due", k, at:nd.date + "00", j,
+        text: k < 0 ? what + " · متأخر " + dayWord(-k) + "! خلصته؟" : k === 0 ? what + " · النهارده! جاهز؟" : k === 1 ? what + " · بكرة. خلصت الشغل؟" : what + " · " + leftWord(k) + ". ماشي فيه؟"});
+    }
+    return out.sort((a, b) => a.at.localeCompare(b.at));
+  }
+  // "ready ✓" from the reminder: finishes the stage due next, or the whole project
+  function readyNow(j){
+    const nd = nextDue(j), list = phasesOf(j);
+    if (nd.label){ const i = list.findIndex(p => !p.done && p.due === nd.date && (p.title || "مرحلة") === nd.label); if (i >= 0){ setStage(j, i, "done"); return; } }
+    const nx = bodyOf(j); nx.status = "done"; nx.delivered = todayStr(); nx.phases = list.map(p => p.done ? p : {...p, done:true, doneDate:todayStr()});
+    store.save(j.id, nx); praise("تم تسليم " + (j.title || "المشروع"), true);
+  }
+  function digestCard(){
+    if (LS.get("ledger.digestHide", "") === todayStr()) return null;
+    const items = digestItems(); if (!items.length) return null;
+    return h("section",{class:"panel digest"},
+      h("div",{class:"panel-h"}, h("h2",null,"🔔 فكّرتك"), h("button",{class:"btn ghost sm",type:"button","aria-label":"إخفاء لحد بكرة",title:"إخفاء لحد بكرة",onclick:()=>{ LS.set("ledger.digestHide", todayStr()); render(); }}, icon("i-x"))),
+      h("ul",{class:"dg"}, ...items.slice(0, 6).map(it => h("li",{class:"dg-" + it.kind + (it.k < 0 ? " late" : it.k <= 1 ? " soon" : "")},
+        h("span",{class:"dg-ic"}, it.kind === "meet" ? icon("i-cal") : h("b",{class:"num"}, it.k < 0 ? "!" : String(it.k))),
+        h("span",{class:"grow",onclick:()=> it.j ? openSheet(it.j.id) : openSolo(it.m.id)}, it.text),
+        it.kind === "due" ? h("button",{class:"btn sm",type:"button",onclick:()=>readyNow(it.j)},"جاهز ✓")
+          : it.j ? h("span",null, meetCheck(it.j, it.m)) : null))));
+  }
   async function reminders(){
     const list = dueSoon(), meets = todayMeetings();
     try { if ("setAppBadge" in navigator) (list.length + meets.length) ? navigator.setAppBadge(list.length + meets.length) : navigator.clearAppBadge(); } catch(e){}
@@ -501,11 +538,12 @@
     // snapshot for the background check in sw.js
     try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>({title:j.title + (nextDue(j).label ? " (" + nextDue(j).label + ")" : ""), client:j.client, due:nextDue(j).date}))))); await c.put("meetings", new Response(JSON.stringify(allMeets().filter(({m})=>!m.done).map(({j,m})=>({title:m.title, client:j ? j.client : (m.with||""), date:m.date, time:m.time}))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
     // once a day, when the app opens
-    if ((list.length || meets.length) && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
+    const dg = digestItems();
+    if (dg.length && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
       settings.lastNotify = todayStr(); saveSettings();
-      try { const reg = await navigator.serviceWorker?.getRegistration(); const body = meets.map(m => "اجتماع " + fmtTime(m.time) + ": " + (m.title||"") ).concat(list.slice(0,4).map(reminderText)).join("\n");
+      try { const reg = await navigator.serviceWorker?.getRegistration(); const body = dg.slice(0, 6).map(x => "• " + x.text).join("\n");
         const opts = {body, tag:"due-today", icon:"icons/icon-192.png", badge:"icons/icon-192.png", dir:"rtl", lang:"ar"};
-        const ttl = meets.length ? "مواعيد اليوم" : "مواعيد تسليم قريبة"; if (reg) reg.showNotification(ttl, opts); else new Notification(ttl, opts); } catch(e){}
+        const ttl = "فكّرتك 🔔 " + (dg.length === 1 ? "حاجة واحدة جاية" : dg.length + " حاجات جاية"); if (reg) reg.showNotification(ttl, opts); else new Notification(ttl, opts); } catch(e){}
     }
   }
   // test: a sample alert in 15 seconds on this device and on every device signed in with the same account
@@ -666,7 +704,7 @@
   }
   function viewHome(){
     if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
-    return [waCard(), installCard(), linkCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards(), rateLine()];
+    return [waCard(), digestCard(), installCard(), linkCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards(), rateLine()];
   }
 
   // ---------- accounts ----------
@@ -1198,8 +1236,8 @@
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"التنبيهات")),
         h("div",null,
-          h("p",null,"التذكير قبل موعد التسليم بـ:"),
-          h("div",{class:"picks"}, ...[1,2,3,4].map(k => h("button",{type:"button",class:"pick","aria-pressed":String(settings.remindDays===k),onclick:()=>{ settings.remindDays=k; saveSettings(); for (const j of Object.values(all)) if (!j.deleted && j.due) j.dirty = true; persist(); render(); scheduleSync(); }}, dayWord(k)))),
+          h("p",null,"فكّرني كل يوم بالمواعيد اللي جاية خلال:"),
+          h("div",{class:"picks"}, ...[1,3,5,7].map(k => h("button",{type:"button",class:"pick","aria-pressed":String(settings.remindDays===k),onclick:()=>{ settings.remindDays=k; saveSettings(); for (const j of Object.values(all)) if (!j.deleted && j.due) j.dirty = true; persist(); render(); scheduleSync(); }}, dayWord(k)))),
           h("p",{class:"note"},"التطبيق بيطلّعلك إشعار قبل الميتنج بنص ساعة، والساعة 10 الصبح يوم التسليم، وهو مفتوح أو في الخلفية. ولو عايز تتفكّر والتطبيق مقفول خالص، دوس زرار 📅 وضيف الميعاد لتقويمك."),
           h("div",{class:"row-btns"},
             "Notification" in window && Notification.permission === "granted" ? h("span",{class:"cd c-done"},"✓ إشعارات التطبيق مفعّلة")
