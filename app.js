@@ -26,10 +26,10 @@
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
-  let jobs = [], expenses = [], gives = [];
+  let jobs = [], expenses = [], gives = [], solo = [];
   const refreshJobs = () => {
     const v = Object.values(all).filter(j => j && !j.deleted);
-    jobs = v.filter(j => !j.kind); expenses = v.filter(j => j.kind === "expense"); gives = v.filter(j => j.kind === "give");
+    jobs = v.filter(j => !j.kind); expenses = v.filter(j => j.kind === "expense"); gives = v.filter(j => j.kind === "give"); solo = v.filter(j => j.kind === "meet");
   };
   refreshJobs();
 
@@ -76,6 +76,8 @@
   }
   const isLate = (j) => { const d = nextDue(j).date; return isOpen(j) && !!d && daysUntil(d) < 0; };
   const meetingsOf = (j) => Array.isArray(j.meetings) ? j.meetings : [];
+  // every meeting: ones inside projects, and stand-alone ones (team, company…) that aren't client work
+  const allMeets = () => jobs.flatMap(j => meetingsOf(j).map(m => ({j, m}))).concat(solo.map(m => ({j:null, m})));
   function fmtTime(t){ if (!/^\d{1,2}:\d{2}$/.test(t||"")) return ""; let [hh,mm] = t.split(":").map(Number); const pm = hh >= 12; hh = hh % 12 || 12; return hh + ":" + String(mm).padStart(2,"0") + (pm ? " م" : " ص"); }
   const relDay = (s) => { const k = daysUntil(s); return k === 0 ? "اليوم" : k === 1 ? "غداً" : k === -1 ? "أمس" : dlong(s); };
   const dayWord = (k) => k === 1 ? "يوم" : k === 2 ? "يومين" : (k <= 10 ? k+" أيام" : k+" يوم");
@@ -459,7 +461,7 @@
   // ---------- reminders ----------
   function dueSoon(){ return jobs.filter(j => { const d = nextDue(j).date; return isOpen(j) && d && daysUntil(d) <= settings.remindDays; }).sort((a,b)=>nextDue(a).date.localeCompare(nextDue(b).date)); }
   const reminderText = (j) => { const nd = nextDue(j), k = daysUntil(nd.date); return (k < 0 ? "متأخر " + dayWord(-k) : k === 0 ? "التسليم اليوم" : k === 1 ? "التسليم غداً" : "متبقٍ " + dayWord(k)) + ": " + (j.title||"") + (nd.label ? " (" + nd.label + ")" : "") + (j.client ? " — " + j.client : ""); };
-  const todayMeetings = () => jobs.flatMap(j => meetingsOf(j).filter(m => !m.done && m.date === todayStr()).map(m => ({...m, client:j.client}))).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+  const todayMeetings = () => allMeets().filter(({m}) => !m.done && m.date === todayStr()).map(({j, m}) => ({...m, client: j ? j.client : (m.with || "")})).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
   const meetTimers = [];
   // while the app is open (or in the background on a computer): a pop-up on screen 30 minutes before each meeting and
   // at 10 AM on delivery days, as a system notification when allowed, and inside the app either way
@@ -476,7 +478,7 @@
   function scheduleMeetingAlerts(){
     meetTimers.splice(0).forEach(clearTimeout);
     const now = Date.now(), plan = (at, fn) => { const ms = at - now; if (ms > -10*60e3 && ms < 13*3600e3) meetTimers.push(setTimeout(fn, Math.max(0, ms))); };
-    for (const j of jobs) for (const m of meetingsOf(j)){
+    for (const {m} of allMeets()){
       if (m.done || !m.date || !m.time || daysUntil(m.date) < 0 || daysUntil(m.date) > 1) continue;
       const [y,mo,d] = m.date.split("-").map(Number), [hh,mm] = m.time.split(":").map(Number);
       const at = new Date(y, mo-1, d, hh, mm - 30).getTime();
@@ -497,7 +499,7 @@
     try { if ("setAppBadge" in navigator) (list.length + meets.length) ? navigator.setAppBadge(list.length + meets.length) : navigator.clearAppBadge(); } catch(e){}
     scheduleMeetingAlerts();
     // snapshot for the background check in sw.js
-    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>({title:j.title + (nextDue(j).label ? " (" + nextDue(j).label + ")" : ""), client:j.client, due:nextDue(j).date}))))); await c.put("meetings", new Response(JSON.stringify(jobs.flatMap(j=>meetingsOf(j).filter(m=>!m.done).map(m=>({title:m.title, client:j.client, date:m.date, time:m.time})))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
+    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>({title:j.title + (nextDue(j).label ? " (" + nextDue(j).label + ")" : ""), client:j.client, due:nextDue(j).date}))))); await c.put("meetings", new Response(JSON.stringify(allMeets().filter(({m})=>!m.done).map(({j,m})=>({title:m.title, client:j ? j.client : (m.with||""), date:m.date, time:m.time}))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
     // once a day, when the app opens
     if ((list.length || meets.length) && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
       settings.lastNotify = todayStr(); saveSettings();
@@ -578,20 +580,47 @@
     return items.sort((x,y) => (x.date + (x.time||"99")).localeCompare(y.date + (y.time||"99")));
   }
   function meetingsPanel(){
-    const list = [];
-    for (const j of jobs) for (const m of meetingsOf(j)) if (!m.done && m.date && daysUntil(m.date) >= 0 && daysUntil(m.date) <= 7) list.push({j, m});
-    if (!list.length) return null;
+    const list = allMeets().filter(({m}) => !m.done && m.date && daysUntil(m.date) >= 0 && daysUntil(m.date) <= 7);
     list.sort((x,y) => (x.m.date + (x.m.time||"99")).localeCompare(y.m.date + (y.m.time||"99")));
+    const addBtn = h("button",{class:"btn ghost sm",type:"button",style:"color:var(--accent)",onclick:()=>openSolo(null)}, icon("i-plus"), "ميتنج");
+    if (!list.length) return jobs.length || solo.length ? h("section",{class:"panel today"}, h("div",{class:"panel-h"}, h("h2",null,"الاجتماعات"), addBtn), h("div",{class:"hint",style:"padding:0 18px 14px"},"مفيش اجتماعات الأسبوع ده. اجتماع مع تيم أو شركة؟ اضغط «+ ميتنج».")) : null;
     return h("section",{class:"panel today"},
-      h("div",{class:"panel-h"}, h("h2",null,"الاجتماعات")),
-      h("ul",{class:"plist"}, ...list.slice(0, 5).map(({j, m}) => {
+      h("div",{class:"panel-h"}, h("h2",null,"الاجتماعات"), addBtn),
+      h("ul",{class:"plist"}, ...list.slice(0, 6).map(({j, m}) => {
         const today = daysUntil(m.date) === 0, t = fmtTime(m.time);
-        return h("li",{tabindex:"0",class:today?"is-today":"",onclick:()=>openSheet(j.id)},
+        return h("li",{tabindex:"0",class:today?"is-today":"",onclick:()=> j ? openSheet(j.id) : openSolo(m.id)},
           h("div",{class:"timebox"}, h("b",{class:"num"}, t ? t.split(" ")[0] : "—"), h("span",null, t ? t.split(" ")[1] : "")),
-          h("div",{class:"grow"}, h("div",{class:"t"}, m.title || "اجتماع"), h("div",{class:"s"}, j.client || "")),
+          h("div",{class:"grow"}, h("div",{class:"t"}, m.kind ? h("i",{class:"kind k-" + m.kind}, kindName(m.kind)) : null, j ? meetTitle(m) : (m.title || "اجتماع")), h("div",{class:"s"}, j ? (j.client || "") : (m.with ? "مع " + m.with : "ميتنج خاص"))),
           h("span",{class:"cd " + (today ? "c-soon" : "c-ok")}, relDay(m.date)),
-          h("span",{onclick:e=>e.stopPropagation()}, meetCheck(j, m)));
+          h("span",{onclick:e=>e.stopPropagation()}, j ? meetCheck(j, m) : h("button",{class:"chk",type:"button","aria-label":"تم الاجتماع",onclick:()=>{ store.save(m.id, {...bodyOf(m), done:true}); toast("تم الاجتماع ✓"); }}, "")));
       })));
+  }
+  // stand-alone meeting (team, company, anything that isn't a client project)
+  let soloId = null;
+  function openSolo(id, preset){
+    soloId = id; const m = id ? all[id] : (preset || {title:"", with:"", date:todayStr(), time:"12:00", notes:""});
+    const box = $("soloBox");
+    box.replaceChildren(
+      h("div",{class:"wz-h",style:"padding-bottom:4px"}, h("div",{class:"row"}, h("h2",null, id ? "تعديل الميتنج" : "ميتنج جديد"), h("button",{class:"btn ghost sm",type:"button","aria-label":"إغلاق",onclick:()=>$("soloDlg").close()}, icon("i-x")))),
+      h("form",{class:"wz-b fgrid",onsubmit:e=>{
+          e.preventDefault();
+          const data = {...(id ? bodyOf(all[id]) : {}), kind:"meet", title:$("soTitle").value.trim() || "اجتماع", with:$("soWith").value.trim(), date:$("soDate").value || todayStr(), time:$("soTime").value || "", notes:$("soNotes").value.trim(), done: id ? !!all[id].done : false};
+          const nid = id || newId(); store.save(nid, data); $("soloDlg").close();
+          toast(id ? "تم تعديل الميتنج ✓" : "تم حفظ الميتنج ✓ " + relDay(data.date) + (data.time ? " " + fmtTime(data.time) : ""), 4000);
+          if ("Notification" in window && Notification.permission === "default") enableNotify();
+        }},
+        h("label",{class:"f full"},"عن إيه", h("input",{id:"soTitle",value:m.title || "",placeholder:"ميتنج التيم، مقابلة شغل، اجتماع الشركة…"})),
+        h("label",{class:"f full"},"مع مين (اختياري)", h("input",{id:"soWith",value:m.with || "",placeholder:"التيم، الشركة، اسم الشخص…"})),
+        h("label",{class:"f"},"اليوم", h("input",{id:"soDate",type:"date",value:m.date || todayStr()})),
+        h("label",{class:"f"},"الساعة", h("input",{id:"soTime",type:"time",value:m.time || ""})),
+        h("label",{class:"f full"},"تفاصيل (اختياري)", h("textarea",{id:"soNotes",rows:"2",placeholder:"المكان، اللينك، النقط…"}, m.notes || "")),
+        h("div",{class:"full row-btns"},
+          h("button",{class:"btn primary",type:"submit"},"حفظ"),
+          id && m.date && daysUntil(m.date) >= 0 ? (isAndroid || isIOS ? calButton(meetingEvent(null, m), "للتقويم")
+            : h("span",{class:"cal-menu"}, h("button",{class:"btn sm cal",type:"button",onclick:()=>openGoogle(meetingEvent(null, m))}, icon("i-cal"), "Google Calendar"), h("button",{class:"btn sm cal",type:"button",onclick:()=>{ saveIcs(meetingEvent(null, m)); toast("افتح الملف ليُضاف إلى Outlook أو تقويم ماك"); }}, "Outlook / ماك"))) : null,
+          id ? h("button",{class:"btn ghost danger",type:"button",onclick:()=>{ if (confirm("تمسح الميتنج ده؟")){ store.remove(id); $("soloDlg").close(); toast("تم حذف الميتنج"); } }},"حذف") : null)));
+    openDlg($("soloDlg"));
+    setTimeout(() => { if (!id) $("soTitle").focus(); }, 40);
   }
   function markArrived(j, idx){
     const cur = curOf(j), nx = bodyOf(j);
@@ -939,7 +968,7 @@
     if (!raw.trim()){ box.replaceChildren(); return; }
     const u = understand(raw), chip = (k, v) => v ? h("span",{class:"vchip"}, h("small",null,k), v) : null;
     const list = u.type === "meeting"
-      ? [chip("ميتنج", u.j ? (u.j.client || u.j.title) : "قول اسم العميل"), chip("النوع", kindName(u.kind)), chip("اليوم", relDay(u.date)), chip("الساعة", fmtTime(u.time))]
+      ? [chip("ميتنج", u.j ? (u.j.client || u.j.title) : "ميتنج خاص"), chip("النوع", kindName(u.kind)), chip("اليوم", relDay(u.date)), chip("الساعة", fmtTime(u.time))]
       : [chip("العميل", u.p.client), chip("المشروع", u.p.title), chip("السعر", u.p.price != null ? money(u.p.price, u.p.currency) : ""), chip("عربون", u.p.deposit ? money(u.p.deposit, u.p.currency) : ""), chip("التسليم", u.p.due ? dshort(u.p.due) : ""), chip("مراحل", u.p.phases ? String(u.p.phases.length) : ""), chip("ميتنج", u.p.meet ? relDay(u.p.meet.date) + " " + fmtTime(u.p.meet.time) : "")];
     box.replaceChildren(...list.filter(Boolean));
   }
@@ -947,7 +976,15 @@
   function actOnVoice(raw){
     const u = understand(raw);
     if (u.type === "meeting"){
-      if (!u.j){ toast("مالقيتش المشروع. قول اسم العميل أو المشروع مع الميتنج.", 5000); return; }
+      if (!u.j){
+        const w = raw.match(/(?:^|\s)مع\s+([^\d،,.\n]+?)(?=\s+(?:بكره|بكرة|النهارده|يوم|الساعه|الساعة|بعد|عن|بخصوص|علشان|عشان)(?:\s|$)|[\d،,.]|$)/);
+        const about = raw.match(/(?:بخصوص|عن|علشان|عشان)\s+([^\d،,.\n]+?)(?=\s+(?:بكره|بكرة|النهارده|يوم|الساعه|الساعة|بعد|مع)(?:\s|$)|[\d،,.]|$)/);
+        const m = {kind:"meet", title: about ? "ميتنج " + about[1].trim() : (w ? "ميتنج مع " + w[1].trim() : "ميتنج"), with: w ? w[1].trim() : "", date:u.date, time:u.time, notes:"🎤 " + raw, done:false};
+        const id = newId(); store.save(id, m);
+        toast("اتسجّل ميتنج ✓ " + relDay(m.date) + " " + fmtTime(m.time) + (w ? " مع " + m.with : ""), 5000);
+        if ("Notification" in window && Notification.permission === "default") enableNotify();
+        return;
+      }
       const j = u.j, m = {id:newId(), kind:u.kind, title:(u.kind ? kindName(u.kind) : "اجتماع") + " — " + (j.client || j.title || ""), date:u.date, time:u.time, notes:"🎤 " + raw};
       const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m];
       store.save(j.id, nx); voiceUndo = {id:j.id, meet:m.id};
@@ -1192,7 +1229,7 @@
     document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     settings.lastBackup = todayStr(); saveSettings(); render();
   }
-  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.concat(expenses, gives).map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
+  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.concat(expenses, gives, solo).map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
   function backupCsv(){
     const cell = v => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g,'""') + '"'; };
     const head = ["العميل","الرقم","المشروع","النوع","الحالة","العملة","السعر","المدفوع","المدفوع بالـ" + CUR[settings.currency],"المتبقي","البدء","الإنجاز","التسليم","تم التسليم","التعديلات","الدفعات","ملاحظات"];
@@ -1517,7 +1554,7 @@
       if (t - t0 < 2900 && !host.hidden) requestAnimationFrame(frame); else cv.remove();
     })(t0);
   }
-  for (const d of ["sheetDlg","wizDlg","waDlg","expDlg"]) $(d).addEventListener("click", e => { if (e.target === $(d)) $(d).close(); });
+  for (const d of ["sheetDlg","wizDlg","waDlg","expDlg","soloDlg"]) $(d).addEventListener("click", e => { if (e.target === $(d)) $(d).close(); });
 
   function renderSheet(){
     const j = jobs.find(x=>x.id===sheetId);
@@ -1648,6 +1685,7 @@
     return t.getFullYear() + pad2(t.getMonth()+1) + pad2(t.getDate()) + "T" + pad2(t.getHours()) + pad2(t.getMinutes()) + "00";
   }
   function meetingEvent(j, m){
+    if (!j) return {key:"m-" + m.id, title:(m.title || "اجتماع") + (m.with && !(m.title||"").includes(m.with) ? " — " + m.with : ""), date:m.date, time:m.time || "10:00", dur:60, alarms:[30], details:(m.notes ? m.notes + "\n" : "") + "من دفتر المصمم"};
     return {key:"m-" + m.id, title:(m.title || "اجتماع") + (j.client && !(m.title||"").includes(j.client) ? " — " + j.client : ""),
       date:m.date, time:m.time || "10:00", dur:60, alarms:[30], details:(m.notes ? m.notes + "\n" : "") + "مشروع: " + (j.title || "") + (j.phone ? "\nرقم العميل: " + j.phone : "")};
   }
