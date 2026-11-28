@@ -17,7 +17,7 @@
 <link rel="preload" href="fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
 /* before first paint: decide splash + lock so nothing private flashes on screen */
-try{var _s=JSON.parse(localStorage.getItem("ledger.settings")||"{}"),_d=new Date(),_t=_d.getFullYear()+"-"+(_d.getMonth()+1)+"-"+_d.getDate(),_m=_s.splash||"daily";
+try{var _s=JSON.parse(localStorage.getItem("ledger.settings")||"{}"),_d=new Date(),_t=_d.getFullYear()+"-"+(_d.getMonth()+1)+"-"+_d.getDate(),_m=_s.splashV2?(_s.splash||"always"):(_s.splash==="off"?"off":"always");
 if((_m==="always"||(_m==="daily"&&_s.lastSplashDay!==_t))&&!(Date.now()-(+_s.lastSplashAt||0)<90000))document.documentElement.setAttribute("data-splash","1");
 if(_s.lock&&_s.lock.on)document.documentElement.setAttribute("data-locked","1");
 if(_s.hideOnOpen)document.documentElement.setAttribute("data-hide","1");}catch(e){}
@@ -719,7 +719,7 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 ["اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ، وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ","رواه الترمذي"],
 ["﴿رَبِّ اشْرَحْ لِي صَدْرِي ۝ وَيَسِّرْ لِي أَمْرِي﴾","سورة طه: 25-26"],
 ["﴿حَسْبِيَ اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ ۖ عَلَيْهِ تَوَكَّلْتُ ۖ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ﴾","سورة التوبة: 129"]];
-var i=Math.floor(Date.now()/864e5)%D.length;document.getElementById("spDua").textContent=D[i][0];document.getElementById("spSrc").textContent=D[i][1];
+var i=0;try{var k=+(localStorage.getItem("ledger.duaNext")||0)||0;i=k%D.length;if(document.documentElement.hasAttribute("data-splash"))localStorage.setItem("ledger.duaNext",String((k+1)%D.length))}catch(e){}document.getElementById("spDua").textContent=D[i][0];document.getElementById("spSrc").textContent=D[i][1];
 var sp=document.getElementById("splash"),ok=function(){sp.classList.add("ready")};
 try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.fonts.load('700 1em "IBM Plex Sans Arabic"')]).then(ok,ok)}catch(e){ok()}setTimeout(ok,500);})();
 </script>
@@ -855,7 +855,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="parser.js?v=30"></script>
+<script src="app.js?v=30"></script>
 </body>
 </html>

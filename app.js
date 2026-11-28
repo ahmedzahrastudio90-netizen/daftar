@@ -21,7 +21,8 @@
               set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
   let all = LS.get("ledger.jobs", {});           // id -> job (incl. deleted tombstones)
   const settings = Object.assign({currency:"EGP", myName:"", sheetUrl:"", token:"", lastSync:0, lastBackup:"", remindDays:3, lastNotify:"",
-    hideMoney:false, hideOnOpen:false, splash:"daily", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:0, altCur:"USD"}, LS.get("ledger.settings", {}));
+    hideMoney:false, hideOnOpen:false, splash:"always", lastSplashDay:"", zakatMode:"zakat", zakatRate:2.5, lock:{on:false}, lockAfter:0, altCur:"USD"}, LS.get("ledger.settings", {}));
+  if (!settings.splashV2){ if (settings.splash !== "off") settings.splash = "always"; settings.splashV2 = true; }
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
