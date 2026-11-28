@@ -869,21 +869,31 @@
   }
   function voiceCur(t){ return /دولار|\$|usd/.test(t) ? "USD" : /ريال|سعودي/.test(t) ? "SAR" : /درهم|اماراتي/.test(t) ? "AED" : /دينار|كويتي/.test(t) ? "KWD" : /يورو/.test(t) ? "EUR" : /جنيه|مصري/.test(t) ? "EGP" : ""; }
   function numAfter(t, re){ const m = t.match(new RegExp("(?:" + re + ")\\s*(?:هي|هو|ب|بـ|=|:)?\\s*(\\d+(?:\\.\\d+)?)")); return m ? n(m[1]) : null; }
+  // match a project by the client's name (or the project's own name), never by generic words like "لوجو" or "شركة"
+  const GENERIC = new Set(["شركه","شركة","مطعم","مشروع","شغلانه","جديد","جديده","عميل","العميل","مع","ال","الدكتور","دكتور","استاذ","مهندس","براند","محل","كافيه","عياده","مركز","مؤسسه","+"]);
   function findJob(t){
+    const words = new Set(t.split(/\s+/));
+    const typeWords = new Set(TYPES.flatMap(x => normAr(x).split(/\s+/)));
     let best = null, score = 0;
     for (const j of jobs){
-      for (const [txt, w] of [[j.title, 2], [j.client, 3]]){
+      for (const [txt, w] of [[j.client, 3], [j.title, 1]]){
         const k = normAr(txt).trim(); if (k.length < 2) continue;
-        if (t.includes(k) && k.length * w > score){ best = j; score = k.length * w; }
-        else for (const part of k.split(/\s+/)) if (part.length >= 3 && t.includes(part) && part.length * w * .7 > score){ best = j; score = part.length * w * .7; }
+        const parts = k.split(/\s+/).filter(x => x.length >= 3 && !GENERIC.has(x) && !typeWords.has(x));
+        if (!parts.length) continue;
+        const hit = parts.filter(x => words.has(x) || words.has("ل" + x) || words.has("ب" + x) || words.has("و" + x)).length;
+        if (!hit) continue;
+        const sc = (hit / parts.length) * w * 10 + (isOpen(j) ? 1 : 0);
+        if (sc > score){ best = j; score = sc; }
       }
     }
-    return best && (isOpen(best) || score > 6) ? best : best;
+    return best;
   }
   const MEET_WORDS = {ideas:/افكار|فكره|فكرة/, sketch:/اسكتش|سكتش|سكيتش|تجارب/, dir:/دايركشن|direction/, strategy:/استراتيج|ستراتيج/, final:/عرض الشغل|الشغل النهائي|فاينال|تسليم/, client:/العميل طالب|طالب ميتنج|طلب ميتنج|عايز يقابل/};
   function understand(raw){
     const t = voiceNums(normAr(raw));
-    if (/اجتماع|ميتنج|ميتينج|ميتن|مقابله|كول|call|meeting|زوم|zoom/.test(t)){
+    const isMeet = /اجتماع|ميتنج|ميتينج|ميتن(?:ج|ق)|مقابله|(?:^|\s)كول(?:\s|$)|call|meeting|(?:^|\s)زوم(?:\s|$)|zoom/.test(t);
+    const isNew = /جديد|جديده|شغلانه|حسابها|حسابه|سعرها|عربون|دفعه اولي|اول دفعه|مقدم/.test(t);
+    if (isMeet && !isNew){
       const j = findJob(t);
       let kind = ""; for (const [k, re] of Object.entries(MEET_WORDS)) if (re.test(t)){ kind = k; break; }
       const date = voiceDate(t) || todayStr(), time = voiceTime(t) || "12:00";
@@ -902,15 +912,18 @@
     if (/باكدج|باكيدج|تغليف|علب/.test(tt) && !types.includes("تغليف")) types.push("تغليف");
     p.types = types;
     // client: after "لشركه / للعميل / لـ / باسم / مع / عميل"
-    const STOP = "(?=\\s+ب(?:[أا]لف|[أا]لاف|\\d)|\\s+(?:ب|بـ|حساب|حسابها|حسابه|سعر|سعرها|بسعر|التمن|دفع|دفعة|دفعه|عربون|مقدم|والتسليم|التسليم|تسليم|والمده|المده|خلال|بعد|يوم|مراحل|بمبلغ)(?:\\s|$)|\\s*[\\d،,.]|$)";
+    const STOP = "(?=\\s+ب(?:[أا]لف|[أا]لاف|\\d)|\\s+ب?\\S*(?:تلاف|[أاآ]لاف|ميه|مية)(?:\\s|$)|\\s+و?(?:عندنا|وعندنا|في|فيه)\\s|\\s+(?:ب|بـ|حساب|حسابها|حسابه|سعر|سعرها|بسعر|التمن|دفع|دفعة|دفعه|عربون|مقدم|والتسليم|التسليم|تسليم|والمده|المده|خلال|بعد|يوم|مراحل|بمبلغ)(?:\\s|$)|\\s*[\\d،,.]|$)";
     const rawN = raw.replace(/[٠-٩]/g, c => AR_DIG[c]).replace(/(^|\s)لل(?=\S)/g, "$1ل ال");
     let cm = rawN.match(new RegExp("(?:^|\\s)(?:لشركة|لشركه|للعميل|باسم|اسمه|اسمها|العميل|عميل|شركة|شركه|مع)\\s+([^\\d،,.\\n]+?)" + STOP))
       || rawN.match(new RegExp("(?:^|\\s)لـ?\\s*(?!وجو|و\\s)([^\\s\\d،,.][^\\d،,.\\n]*?)" + STOP));
     p.client = cm ? cm[1].replace(/^(?:ال)?(?:شركة|شركه)\s+/, "").trim().split(/\s+/).slice(0, 4).join(" ") : "";
     if (p.client && TYPES.some(x => normAr(p.client) === normAr(x))) p.client = "";
     p.title = types.length ? types.join(" + ") + (p.client ? " " + p.client : "") : (p.client ? "مشروع " + p.client : "");
-    const dueM = t.match(/(?:تسليم|التسليم|هسلم|نسلم|الديدلاين|ديدلاين|مده|المده|خلال|بعد)[^\n]*/);
+    const MEET_RE = /اجتماع|ميتنج|ميتينج|ميتن(?:ج|ق)|مقابله|(?:^|\s)كول(?:\s|$)|call|meeting|(?:^|\s)زوم(?:\s|$)|zoom/;
+    const mi = t.search(MEET_RE), body = mi >= 0 ? t.slice(0, mi) : t;
+    const dueM = body.match(/(?:تسليم|التسليم|هسلم|نسلم|الديدلاين|ديدلاين|مده|المده|خلال|بعد)[^\n]*/);
     p.due = dueM ? voiceDate(dueM[0]) : "";
+    if (mi >= 0){ const seg = t.slice(mi); let kind = ""; for (const [k, re] of Object.entries(MEET_WORDS)) if (re.test(seg)){ kind = k; break; } p.meet = {date: voiceDate(seg) || todayStr(), time: voiceTime(seg) || "12:00", kind}; }
     const ph = t.match(/مراحل\s*(?::)?\s*([^\n]+?)(?=\s+(?:حساب|سعر|دفع|عربون|التسليم|تسليم)|$)/);
     if (ph){
       const names = ph[1].split(/\s*(?:،|,|\sو(?=\S)|\sثم\s|\sبعدين\s)\s*/).map(x => x.trim()).filter(x => x && x.length < 30).slice(0, 8);
@@ -926,7 +939,7 @@
     const u = understand(raw), chip = (k, v) => v ? h("span",{class:"vchip"}, h("small",null,k), v) : null;
     const list = u.type === "meeting"
       ? [chip("ميتنج", u.j ? (u.j.client || u.j.title) : "قول اسم العميل"), chip("النوع", kindName(u.kind)), chip("اليوم", relDay(u.date)), chip("الساعة", fmtTime(u.time))]
-      : [chip("العميل", u.p.client), chip("المشروع", u.p.title), chip("السعر", u.p.price != null ? money(u.p.price, u.p.currency) : ""), chip("عربون", u.p.deposit ? money(u.p.deposit, u.p.currency) : ""), chip("التسليم", u.p.due ? dshort(u.p.due) : ""), chip("مراحل", u.p.phases ? String(u.p.phases.length) : "")];
+      : [chip("العميل", u.p.client), chip("المشروع", u.p.title), chip("السعر", u.p.price != null ? money(u.p.price, u.p.currency) : ""), chip("عربون", u.p.deposit ? money(u.p.deposit, u.p.currency) : ""), chip("التسليم", u.p.due ? dshort(u.p.due) : ""), chip("مراحل", u.p.phases ? String(u.p.phases.length) : ""), chip("ميتنج", u.p.meet ? relDay(u.p.meet.date) + " " + fmtTime(u.p.meet.time) : "")];
     box.replaceChildren(...list.filter(Boolean));
   }
   let voiceUndo = null;
@@ -950,9 +963,10 @@
       price: n(p.price), currency: p.currency, revisions:"", start, due: p.due || "", finish:"", notes:"🎤 " + raw, phases: p.phases || []};
     if (data.phases.length){ data.start = data.phases.map(x=>x.start).sort()[0]; data.due = data.phases.map(x=>x.due).sort().pop(); }
     if (p.deposit > 0) data.payments = [stampPay({amount:p.deposit, date:start, note:"عربون", received:false}, p.currency)];
+    if (p.meet) data.meetings = [{id:newId(), kind:p.meet.kind, title:(p.meet.kind ? kindName(p.meet.kind) : "اجتماع") + " — " + data.client, date:p.meet.date, time:p.meet.time}];
     const id = newId(); store.save(id, data); voiceUndo = {id};
     openSheet(id);
-    toast("اتسجّل المشروع ✓" + (p.price == null ? " — السعر مش واضح، عدّله" : !p.client ? " — اسم العميل مش واضح، عدّله" : ""), 5000);
+    toast("اتسجّل المشروع ✓" + (p.meet ? " ومعاه ميتنج " + relDay(p.meet.date) + " " + fmtTime(p.meet.time) : "") + (p.price == null ? " — السعر مش واضح، عدّله" : !p.client ? " — اسم العميل مش واضح، عدّله" : ""), 5000);
   }
   // speech: short sessions that restart while you talk (avoids the repeated text Android gives in continuous mode)
   let rec = null, vcParts = [], vcLive = "", vcOn = false;
