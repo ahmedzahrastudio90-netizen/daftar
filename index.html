@@ -598,6 +598,11 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .meet-edit{margin:0}
 .m-notes{display:block;font-size:.8rem;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px}
 .btn.icon-only{padding-inline:8px}
+.rate-line{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;border:1px dashed var(--line);background:none;color:var(--muted);border-radius:999px;padding:6px 12px;font:inherit;font-size:.82rem;cursor:pointer;margin-top:2px;align-self:flex-start}
+.rate-line b{color:var(--ink);font-weight:600}
+.rate-line svg{width:14px;height:14px;color:var(--accent)}
+.rate-line.editing{border-style:solid;border-radius:14px;cursor:default;padding:8px 10px}
+.rate-line.editing input{height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font:inherit;background:var(--card);color:var(--ink)}
 .kind-picks{display:flex;flex-wrap:wrap;gap:6px}
 .kind-picks .pick{padding:6px 12px;font-size:.82rem;border-radius:999px}
 .kind{display:table;margin-bottom:3px;font-style:normal;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:999px;margin-inline-end:6px;vertical-align:1px;background:var(--accent-soft);color:var(--accent)}
@@ -816,7 +821,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="parser.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

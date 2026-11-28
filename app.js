@@ -25,10 +25,10 @@
   if (settings.hideOnOpen) settings.hideMoney = true;
   const saveSettings = () => LS.set("ledger.settings", settings);
   function persist(){ if (!LS.set("ledger.jobs", all)) toast("مساحة التخزين على الجهاز ممتلئة. نزّل نسخة احتياطية واحذف مشاريع قديمة."); }
-  let jobs = [], expenses = [];
+  let jobs = [], expenses = [], gives = [];
   const refreshJobs = () => {
     const v = Object.values(all).filter(j => j && !j.deleted);
-    jobs = v.filter(j => !j.kind); expenses = v.filter(j => j.kind === "expense");
+    jobs = v.filter(j => !j.kind); expenses = v.filter(j => j.kind === "expense"); gives = v.filter(j => j.kind === "give");
   };
   refreshJobs();
 
@@ -95,10 +95,22 @@
     }
     return best;
   }
-  const rateNow = (cur) => cur === settings.currency ? 1 : (settings.rates && settings.rates.base === settings.currency && settings.rates.map[cur]) || lastRate(cur);
+  const manualRate = (cur) => { const m = settings.rateManual; return m && m.base === settings.currency && m.map && n(m.map[cur]) ? n(m.map[cur]) : 0; };
+  const rateNow = (cur) => cur === settings.currency ? 1 : manualRate(cur) || (settings.rates && settings.rates.base === settings.currency && settings.rates.map[cur]) || lastRate(cur);
   const payBase = (p, cur) => cur === settings.currency ? n(p.amount)
     : (p.rate && p.rateBase === settings.currency ? n(p.amount) * n(p.rate) : (rateNow(cur) ? n(p.amount) * rateNow(cur) : null));
-  const stampPay = (p, cur) => cur === settings.currency ? p : {...p, rate: p.rate ? n(p.rate) : rateNow(cur), rateBase: settings.currency};
+  // lock the second-currency (dollar) rate of the moment the money is recorded, so old amounts never drift
+  const altStamp = () => { const a = settings.altCur && settings.altCur !== settings.currency && CUR[settings.altCur] ? settings.altCur : (settings.currency === "USD" ? "EGP" : "USD"); const r = a === settings.currency ? 1 : rateNow(a); return r ? {altCur:a, altRate:r, altBase:settings.currency} : {}; };
+  const stampPay = (p, cur) => { const q = cur === settings.currency ? {...p} : {...p, rate: p.rate ? n(p.rate) : rateNow(cur), rateBase: settings.currency}; return p.received === false ? q : {...q, ...altStamp()}; };
+  // the moment a transfer arrives: today's rate is locked for it
+  const arrive = (q, cur) => ({...q, received:true, recvDate:todayStr(), ...(cur !== settings.currency ? {rate:rateNow(cur), rateBase:settings.currency} : {}), ...altStamp()});
+  function altOf(base, amount, cur, rec){
+    const a = altCode(); if (base == null) return null;
+    if (cur === a) return n(amount);
+    if (a === settings.currency) return base;
+    const r = (rec && rec.altCur === a && rec.altBase === settings.currency && n(rec.altRate)) || rateNow(a);
+    return r ? base / r : null;
+  }
   const fmtRate = (r) => Number(r).toLocaleString("en-US", {maximumFractionDigits: r < 1 ? 4 : 2});
   function fetchRates(force){
     if (!navigator.onLine) return;
@@ -114,12 +126,12 @@
   }
   // totals in the main currency + breakdown by currency
   function totals(items){ // items: [{amount, cur, base(nullable)}]
-    const t = {base:0, by:{}, missing:{}, foreign:false};
+    const t = {base:0, alt:0, by:{}, missing:{}, foreign:false};
     for (const it of items){
       if (!it.amount) continue;
       addTo(t.by, it.cur, it.amount);
       if (it.cur !== settings.currency) t.foreign = true;
-      if (it.base == null) addTo(t.missing, it.cur, it.amount); else t.base += it.base;
+      if (it.base == null) addTo(t.missing, it.cur, it.amount); else { t.base += it.base; t.alt += it.alt != null ? it.alt : (altOf(it.base, it.amount, it.cur) || 0); }
     }
     return t;
   }
@@ -438,7 +450,7 @@
   // ---------- income ----------
   function income(prefix){ // payments whose date starts with prefix ("2026-11" or "2026")
     const items = [];
-    for (const j of jobs){ const cur = curOf(j); for (const p of paysOf(j)) if (isRecv(p) && recvDate(p).startsWith(prefix)) items.push({amount:n(p.amount), cur, base:payBase(p, cur)}); }
+    for (const j of jobs){ const cur = curOf(j); for (const p of paysOf(j)) if (isRecv(p) && recvDate(p).startsWith(prefix)) { const b = payBase(p, cur); items.push({amount:n(p.amount), cur, base:b, alt:altOf(b, p.amount, cur, p)}); } }
     return totals(items);
   }
 
@@ -506,18 +518,41 @@
       return e.recurring ? (m <= ym && (!e.stopped || ym < e.stopped)) : m === ym;
     });
   }
-  function expTotal(ym){ return totals(expensesIn(ym).map(e => ({amount:n(e.amount), cur: CUR[e.currency] ? e.currency : settings.currency, base: expBase(e)}))); }
+  function expTotal(ym){ return totals(expensesIn(ym).map(e => { const cur = CUR[e.currency] ? e.currency : settings.currency, b = expBase(e); return {amount:n(e.amount), cur, base:b, alt:altOf(b, e.amount, cur, e)}; })); }
   function monthsOfYear(y){ const now = new Date(), last = String(now.getFullYear()) === y ? now.getMonth() : 11; const out = []; for (let i = 0; i <= last; i++) out.push(y + "-" + String(i+1).padStart(2,"0")); return out; }
-  function yearNet(y){ let inc = 0, exp = 0; for (const ym of monthsOfYear(y)){ inc += income(ym).base; exp += expTotal(ym).base; } return {inc, exp, net: inc - exp, months: monthsOfYear(y).length}; }
+  function yearNet(y){ let inc = 0, exp = 0, alt = 0; for (const ym of monthsOfYear(y)){ const i = income(ym), e = expTotal(ym); inc += i.base; exp += e.base; alt += i.alt - e.alt; } return {inc, exp, net: inc - exp, alt, months: monthsOfYear(y).length}; }
   const dueTotals = () => totals(jobs.map(j => { const cur = curOf(j), r = remOf(j); return {amount:r, cur, base: rateNow(cur) ? r * rateNow(cur) : null}; }));
   // the same amount in your second currency (dollar by default), small, under the main number
   const altCode = () => settings.altCur && settings.altCur !== settings.currency && CUR[settings.altCur] ? settings.altCur : (settings.currency === "USD" ? "EGP" : "USD");
-  function altText(baseAmount){
-    const c = altCode(), r = c === settings.currency ? 1 : rateNow(c);
+  function altText(baseAmount, altAmount){
+    const c = altCode();
+    if (altAmount != null) return altAmount ? "≈ " + rawFmt(Math.round(altAmount)) + " " + CUR[c] : "";
+    const r = c === settings.currency ? 1 : rateNow(c);
     if (!r || !baseAmount) return "";
     return "≈ " + rawFmt(Math.round(baseAmount / r)) + " " + CUR[c];
   }
-  const big = (v) => [fmt(Math.round(v)), h("small",null,CUR[settings.currency]), altText(v) ? h("span",{class:"alt-cur num"}, altText(v)) : null];
+  const big = (v, a) => [fmt(Math.round(v)), h("small",null,CUR[settings.currency]), altText(v, a) ? h("span",{class:"alt-cur num"}, altText(v, a)) : null];
+  // the dollar (second currency) rate the totals use: shown, and you can set your own when your bank's rate differs
+  let rateEdit = false;
+  function rateLine(){
+    const c = altCode(); if (c === settings.currency) return null;
+    const r = rateNow(c), mine = !!manualRate(c);
+    const label = "1 " + CUR[c] + " = ";
+    if (rateEdit) return h("form",{class:"rate-line editing",onsubmit:e=>{
+        e.preventDefault(); const v = n($("rateIn").value);
+        if (!(v > 0)){ toast("اكتب السعر"); return; }
+        settings.rateManual = {base: settings.currency, map: {...((settings.rateManual && settings.rateManual.base === settings.currency && settings.rateManual.map) || {}), [c]: v}, at: Date.now()};
+        rateEdit = false; saveSettings(); toast("تم ✓ الحسابات ماشية على " + fmtRate(v)); render();
+      }},
+      h("span",null, label), h("input",{id:"rateIn",type:"number",min:"0",step:"any",inputmode:"decimal",value:r ? String(r) : "",style:"width:110px"}), h("span",null, CUR[settings.currency]),
+      h("button",{class:"btn primary sm",type:"submit"},"حفظ"),
+      mine ? h("button",{class:"btn sm",type:"button",onclick:()=>{ const m = {...settings.rateManual, map:{...settings.rateManual.map}}; delete m.map[c]; settings.rateManual = m; rateEdit = false; saveSettings(); fetchRates(true); render(); }},"سعر النت") : null,
+      h("button",{class:"btn ghost sm",type:"button","aria-label":"إلغاء",onclick:()=>{ rateEdit = false; render(); }}, icon("i-x")));
+    return h("button",{class:"rate-line",type:"button",onclick:()=>{ rateEdit = true; render(); setTimeout(()=>{ const i = $("rateIn"); if (i){ i.focus(); i.select(); } },30); }},
+      h("span",null, (c === "USD" ? "سعر الدولار" : "سعر " + CUR_NAME[c]) + ": "), h("b",{class:"num"}, r ? label + fmtRate(r) + " " + CUR[settings.currency] : "مش متاح"),
+      h("small",null, mine ? " · سعرك إنت" : settings.rates && settings.rates.at ? " · سعر النت " + dshort(new Date(settings.rates.at).toISOString().slice(0,10)) : ""),
+      icon("i-edit"));
+  }
 
   // ---------- home ----------
   function upcomingItems(){
@@ -546,7 +581,7 @@
   }
   function markArrived(j, idx){
     const cur = curOf(j), nx = bodyOf(j);
-    nx.payments = paysOf(j).map((q,i) => i === idx ? {...q, received:true, recvDate:todayStr(), ...(cur !== settings.currency && !(q.rate && q.rateBase === settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q);
+    nx.payments = paysOf(j).map((q,i) => i === idx ? arrive(q, cur) : q);
     store.save(j.id, nx); praise("تم استلام " + money(paysOf(j)[idx].amount, cur));
   }
   function transitPanel(){
@@ -582,13 +617,13 @@
     const kpi = (cls, lbl, val, foot) => h("div",{class:"kpi "+cls,tabindex:"0",role:"button",title:settings.hideMoney?"اضغط لإظهار المبالغ":"",onclick:()=>{ if (!reveal()) go("money"); },onkeydown:e=>{if(e.key==="Enter"){ if (!reveal()) go("money"); }}},
       h("div",{class:"lbl"}, lbl), h("div",{class:"val num"}, val), h("div",{class:"foot"}, foot));
     return h("section",{class:"kpis","aria-label":"الحسابات"},
-      kpi("", "صافي " + MONTHS[now.getMonth()], big(mIn.base - mEx.base), "دخل " + fmt(Math.round(mIn.base)) + " · مصاريف " + fmt(Math.round(mEx.base))),
+      kpi("", "صافي " + MONTHS[now.getMonth()], big(mIn.base - mEx.base, mIn.alt - mEx.alt), "دخل " + fmt(Math.round(mIn.base)) + " · مصاريف " + fmt(Math.round(mEx.base))),
       kpi("owed", "مستحقات لدى العملاء", big(due.base), owing ? "لدى " + owing + " عميل" : "لا توجد مستحقات"),
-      kpi("", "صافي " + y, big(yr.net), "متوسط الشهر " + fmt(Math.round(yr.net / Math.max(1, yr.months)))));
+      kpi("", "صافي " + y, big(yr.net, yr.alt), "متوسط الشهر " + fmt(Math.round(yr.net / Math.max(1, yr.months)))));
   }
   function viewHome(){
     if (!jobs.length && !expenses.length) return [waCard(), installCard(), emptyFirst()];
-    return [waCard(), installCard(), linkCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards()];
+    return [waCard(), installCard(), linkCard(), meetingsPanel(), deliveriesPanel(), transitPanel(), moneyHead(), moneyCards(), rateLine()];
   }
 
   // ---------- accounts ----------
@@ -600,15 +635,15 @@
     const exList = expensesIn(ym).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
     const months = monthsOfYear(y).map(k => ({k, net: income(k).base - expTotal(k).base, inc: income(k).base})).filter((m,i,arr) => m.inc || expTotal(m.k).base || i === arr.length-1);
     const maxV = Math.max(1, ...months.map(m => Math.abs(m.net)));
-    const cell = (lbl, v, cls, style) => h("div",{class:cls||"",onclick:reveal}, h("span",null,lbl), h("b",{class:"num",style:style||""}, fmt(Math.round(v))), altText(v) ? h("small",{class:"alt-cur num"}, altText(v)) : null);
+    const cell = (lbl, v, cls, style, a) => h("div",{class:cls||"",onclick:reveal}, h("span",null,lbl), h("b",{class:"num",style:style||""}, fmt(Math.round(v))), altText(v, a) ? h("small",{class:"alt-cur num"}, altText(v, a)) : null);
     return [
-      h("div",{class:"sec-h"}, h("span",{style:"margin-inline-end:auto"}), eyeBtn()),
+      h("div",{class:"sec-h"}, rateLine() || h("span"), h("span",{style:"margin-inline-end:auto"}), eyeBtn()),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null, MONTHS[now.getMonth()] + " " + y), h("button",{class:"btn primary sm",type:"button",onclick:()=>openExp(null)}, icon("i-plus"), "مصروف")),
         h("div",{class:"sumgrid"},
-          cell("الدخل", mIn.base, "", "color:var(--ok)"),
-          cell("المصاريف", mEx.base, "", "color:var(--bad)"),
-          cell("الصافي", mIn.base - mEx.base, "net"))),
+          cell("الدخل", mIn.base, "", "color:var(--ok)", mIn.alt),
+          cell("المصاريف", mEx.base, "", "color:var(--bad)", mEx.alt),
+          cell("الصافي", mIn.base - mEx.base, "net", "", mIn.alt - mEx.alt))),
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"مصاريف الشغل"), h("span",{class:"hint"}, "هذا الشهر")),
         exList.length ? h("ul",{class:"xlist"}, ...exList.map(e => h("li",{tabindex:"0",onclick:()=>openExp(e.id)},
@@ -657,13 +692,37 @@
     const nx = bodyOf(j); nx.zakatPaid = n(j.zakatPaid) + amt; nx.zakatLog = [...(Array.isArray(j.zakatLog) ? j.zakatLog : []), {amount:amt, date:todayStr(), mode:settings.zakatMode}];
     store.save(j.id, nx); toast("تقبّل الله منك");
   }
+  let giveOpen = false;
+  // record any amount you gave; it also settles what's pending on finished projects (oldest first)
+  function saveGive(amount, date, note){
+    let left = amount;
+    for (const j of jobs.filter(j => zakatDue(j) > 0).sort((a,b) => (a.delivered||a.due||"").localeCompare(b.delivered||b.due||""))){
+      if (left <= 0) break;
+      const take = Math.min(left, zakatDue(j)); left -= take;
+      const nx = bodyOf(j); nx.zakatPaid = n(j.zakatPaid) + take; all[j.id] = {...nx, id:j.id, updatedAt: Date.now(), dirty: true};
+    }
+    const id = newId();
+    all[id] = {id, kind:"give", amount, date, note, mode: settings.zakatMode, ...altStamp(), updatedAt: Date.now(), dirty: true};
+    persist(); refreshJobs(); render(); scheduleSync(); praise("تقبّل الله منك");
+  }
   function zakatPanel(){
     if (settings.zakatMode === "off") return null;
     const y = String(new Date().getFullYear());
-    const paidYear = jobs.reduce((a,j) => a + (Array.isArray(j.zakatLog) ? j.zakatLog : []).filter(z => (z.date||"").startsWith(y)).reduce((x,z)=>x+n(z.amount),0), 0);
+    const yGives = gives.filter(g => (g.date||"").startsWith(y)).sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    const paidYear = jobs.reduce((a,j) => a + (Array.isArray(j.zakatLog) ? j.zakatLog : []).filter(z => (z.date||"").startsWith(y)).reduce((x,z)=>x+n(z.amount),0), 0) + yGives.reduce((a,g)=>a+n(g.amount),0);
     const pend = jobs.filter(j => zakatDue(j) > 0);
+    const pendSum = pend.reduce((a,j)=>a+zakatDue(j),0);
+    const giveForm = giveOpen ? h("form",{class:"mini",style:"margin:0 18px 14px",onsubmit:e=>{
+        e.preventDefault(); const a = n($("gvAmt").value); if (!(a > 0)){ toast("اكتب المبلغ"); return; }
+        giveOpen = false; saveGive(a, $("gvDate").value || todayStr(), $("gvNote").value.trim());
+      }},
+      h("label",{class:"f money-in"},"المبلغ (" + CUR[settings.currency] + ")", h("input",{id:"gvAmt",type:"number",min:"0",step:"any",inputmode:"decimal",value: pendSum ? String(pendSum) : ""})),
+      h("label",{class:"f"},"التاريخ", h("input",{id:"gvDate",type:"date",value:todayStr()})),
+      h("label",{class:"f full"},"ملاحظة (اختياري)", h("input",{id:"gvNote",placeholder:"لمين أو فين…"})),
+      h("div",{class:"full",style:"display:flex;gap:8px"}, h("button",{class:"btn primary sm",type:"submit"},"حفظ"), h("button",{class:"btn sm",type:"button",onclick:()=>{giveOpen=false;render();}},"إلغاء"))) : null;
     return h("section",{class:"panel"},
-      h("div",{class:"panel-h"}, h("h2",null, zkWord() + " المشاريع"), h("span",{class:"hint"}, n(settings.zakatRate) + "% من كل مشروع")),
+      h("div",{class:"panel-h"}, h("h2",null, zkWord()), !giveOpen ? h("button",{class:"btn primary sm",type:"button",onclick:()=>{ giveOpen = true; render(); setTimeout(()=>$("gvAmt")?.select(),30); }}, icon("i-plus"), "أخرجت مبلغ") : null),
+      giveForm,
       h("div",{class:"sumgrid",style:"grid-template-columns:1fr 1fr"},
         h("div",null, h("span",null,"أخرجت في " + y), h("b",{class:"num",style:"color:var(--ok)"}, money(paidYear))),
         h("div",null, h("span",null,"لم تُخرج بعد"), h("b",{class:"num"}, money(pend.reduce((a,j)=>a+zakatDue(j),0))))),
@@ -671,6 +730,11 @@
         h("div",{class:"grow",onclick:()=>openSheet(j.id)}, h("b",null, j.title || "مشروع"), h("span",null, j.client || "")),
         h("span",{class:"amt num"}, money(zakatDue(j))),
         h("button",{class:"btn sm",type:"button",onclick:()=>markZakat(j)},"تم الإخراج ✓")))) : null,
+      yGives.length ? h("ul",{class:"xlist"}, ...yGives.slice(0, 6).map(g => h("li",null,
+        h("div",{class:"grow"}, h("b",null, g.note || (g.mode === "zakat" ? "زكاة" : "صدقة")), h("span",null, dlong(g.date))),
+        h("span",{class:"amt num",style:"color:var(--ok)"}, money(n(g.amount))),
+        h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف",onclick:()=>{ if (confirm("تمسح المبلغ ده من السجل؟")) store.remove(g.id); }}, icon("i-x"))))) : null,
+      h("div",{class:"hint",style:"padding:0 18px 10px"}, n(settings.zakatRate) + "% من كل مشروع بيخلص بتتحسب لوحدها هنا."),
       h("details",{class:"more",style:"padding:0 18px 14px"}, h("summary",null,"حاسبة الزكاة السنوية"), zakatCalc()),
       h("div",{class:"note",style:"padding:0 18px 14px"}, settings.zakatMode === "sadaqa"
         ? "تُسجَّل كصدقة. والزكاة الواجبة تكون على المال المدّخر إذا بلغ النصاب ومرّ عليه عام هجري."
@@ -728,6 +792,7 @@
     const data = {...(old ? bodyOf(old) : {}), kind:"expense", amount:amt, currency:ex.cur, note, date:$("exDate").value || todayStr(), recurring:$("exRec").checked};
     if (!data.recurring) delete data.stopped;
     if (ex.cur !== settings.currency && !(data.rate && data.rateBase === settings.currency)){ data.rate = rateNow(ex.cur); data.rateBase = settings.currency; }
+    if (!(data.altRate && data.altBase === settings.currency)) Object.assign(data, altStamp());
     store.save(ex.id || newId(), data);
     $("expDlg").close(); toast(old ? "تم حفظ التعديل" : "تم تسجيل المصروف");
   });
@@ -913,7 +978,7 @@
     document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     settings.lastBackup = todayStr(); saveSettings(); render();
   }
-  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.concat(expenses).map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
+  const backupJson = () => JSON.stringify({app:"studio-ledger", version:2, exportedAt:new Date().toISOString(), currency:settings.currency, jobs: jobs.concat(expenses, gives).map(j=>({...bodyOf(j), id:j.id}))}, null, 1);
   function backupCsv(){
     const cell = v => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g,'""') + '"'; };
     const head = ["العميل","الرقم","المشروع","النوع","الحالة","العملة","السعر","المدفوع","المدفوع بالـ" + CUR[settings.currency],"المتبقي","البدء","الإنجاز","التسليم","تم التسليم","التعديلات","الدفعات","ملاحظات"];
@@ -1301,7 +1366,7 @@
             h("span",{class:"n"}, p.note||""),
             h("div",{class:"seg pstat",role:"group","aria-label":"حالة الدفعة"},
               h("button",{type:"button","aria-pressed":String(!isRecv(p)),onclick:()=>{ if (!isRecv(p)) return; const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> { if (i !== p.i) return q; const r = {...q, received:false}; delete r.recvDate; return r; }); save(nx, "تم الحفظ ✓ قيد التحويل"); }},"قيد التحويل"),
-              h("button",{type:"button","aria-pressed":String(isRecv(p)),onclick:()=>{ if (isRecv(p)) return; const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? {...q, received:true, recvDate:todayStr(), ...(cur!==settings.currency && !(q.rate && q.rateBase===settings.currency) ? {rate:rateNow(cur), rateBase:settings.currency} : {})} : q); store.save(j.id, nx); praise("تم استلام " + money(p.amount,cur)); }},"وصلت")),
+              h("button",{type:"button","aria-pressed":String(isRecv(p)),onclick:()=>{ if (isRecv(p)) return; const nx = bodyOf(j); nx.payments = paysOf(j).map((q,i)=> i===p.i ? arrive(q, cur) : q); store.save(j.id, nx); praise("تم استلام " + money(p.amount,cur)); }},"وصلت")),
             h("button",{class:"btn ghost sm danger",type:"button","aria-label":"حذف الدفعة",onclick:()=>{ const nx = bodyOf(j); nx.payments = paysOf(j).filter((_,i)=>i!==p.i); save(nx,"تم حذف الدفعة"); }}, icon("i-x"))
           ))) : h("div",{class:"hint"},"لا توجد دفعات بعد."),
           payBtn, payForm),
