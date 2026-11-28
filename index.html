@@ -18,7 +18,7 @@
 <script>
 /* before first paint: decide splash + lock so nothing private flashes on screen */
 try{var _s=JSON.parse(localStorage.getItem("ledger.settings")||"{}"),_d=new Date(),_t=_d.getFullYear()+"-"+(_d.getMonth()+1)+"-"+_d.getDate(),_m=_s.splash||"daily";
-if(_m==="always"||(_m==="daily"&&_s.lastSplashDay!==_t))document.documentElement.setAttribute("data-splash","1");
+if((_m==="always"||(_m==="daily"&&_s.lastSplashDay!==_t))&&!(Date.now()-(+_s.lastSplashAt||0)<90000))document.documentElement.setAttribute("data-splash","1");
 if(_s.lock&&_s.lock.on)document.documentElement.setAttribute("data-locked","1");
 if(_s.hideOnOpen)document.documentElement.setAttribute("data-hide","1");}catch(e){}
 </script>
@@ -816,7 +816,7 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="parser.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

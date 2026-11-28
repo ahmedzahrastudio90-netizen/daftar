@@ -1852,7 +1852,7 @@
   // ---------- start screen (dua) ----------
   function runSplash(){
     if (!document.documentElement.hasAttribute("data-splash")) return;
-    const d = new Date(); settings.lastSplashDay = d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate(); saveSettings();
+    const d = new Date(); settings.lastSplashDay = d.getFullYear() + "-" + (d.getMonth()+1) + "-" + d.getDate(); settings.lastSplashAt = Date.now(); saveSettings();
     const sp = $("splash"); let done = false;
     const hide = () => { if (done) return; done = true; sp.classList.add("out");
       setTimeout(() => { document.documentElement.removeAttribute("data-splash"); sp.classList.remove("out"); if (isLocked() && settings.lock.cred) tryBio(); }, 350); };
@@ -1864,7 +1864,9 @@
   if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))){
     const hadController = !!navigator.serviceWorker.controller;
     let reloaded = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded && !document.querySelector("dialog[open]")){ reloaded = true; location.reload(); } });
+    // a new version took over: reload once, but never in the middle of the start screen or an open window
+    const reloadWhenFree = () => { if (reloaded) return; if (document.documentElement.hasAttribute("data-splash") || document.querySelector("dialog[open]")){ setTimeout(reloadWhenFree, 1500); return; } reloaded = true; location.reload(); };
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) reloadWhenFree(); });
     navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(()=>{});
   }
   if (location.hash.startsWith("#pair=")){ const code = location.hash; try { history.replaceState(null, "", location.pathname + "#home"); } catch(e){} setTimeout(() => applyPair(code), 300); }
