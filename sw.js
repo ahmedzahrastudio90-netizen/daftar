@@ -1,6 +1,6 @@
 /* Offline cache, WhatsApp share target, and a best-effort daily reminder. */
-const VERSION = "ledger-v32";
-const SHELL = ["./", "index.html", "app.js?v=32", "parser.js?v=32", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
+const VERSION = "ledger-v33";
+const SHELL = ["./", "index.html", "app.js?v=33", "parser.js?v=33", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2", "fonts/ibm-plex-sans-arabic-latin-400-normal.woff2",
   "fonts/ibm-plex-sans-arabic-latin-600-normal.woff2", "fonts/readex-pro-arabic-600-normal.woff2", "fonts/readex-pro-latin-600-normal.woff2", "fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2", "lib/qrcode.js"];
 
@@ -71,8 +71,9 @@ async function checkDue() {
   const kOf = (ds) => { const [y, m, d] = String(ds).split("-").map(Number); return Math.round((new Date(y, m - 1, d) - today) / 86400000); };
   const word = (k) => (k === 1 ? "يوم" : k === 2 ? "يومين" : k + " أيام");
   const left = (k) => (k === 0 ? "النهارده" : k === 1 ? "بكرة" : k === 2 ? "بعد بكرة" : "باقي " + word(k));
-  const meets = meetRes ? (await meetRes.json()).map((m) => ({ ...m, k: kOf(m.date) })).filter((m) => m.k >= 0 && m.k <= days) : [];
-  const list = (await snap.json()).map((j) => ({ ...j, k: kOf(j.due) })).filter((j) => j.k <= days);
+  const meets = meetRes ? (await meetRes.json()).map((m) => ({ ...m, k: kOf(m.date) })).filter((m) => m.k >= 0 && m.k <= 3) : [];
+  const nudge = (j) => { if (j.k < 0) return true; const total = j.start ? Math.max(1, kOf(j.due) - kOf(j.start)) : 7, since = j.start ? -kOf(j.start) : 0; if (since < 0) return false; if (total <= 7) return true; if (total <= 30) return j.k <= Math.max(3, Math.ceil(total / 3)) || (since > 0 && since % 7 === 0); return j.k <= 7 || (since > 0 && since % 7 === 0); };
+  const list = (await snap.json()).map((j) => ({ ...j, k: kOf(j.due) })).filter(nudge);
   if (!list.length && !meets.length) return;
   const lines = meets.map((m) => ({ at: m.date + (m.time || "99"), t: (m.k <= 1 ? left(m.k) + (m.time ? " " + m.time : "") + ": " : "") + (m.title || "ميتنج") + (m.client ? " — " + m.client : "") + (m.k > 1 ? " · " + left(m.k) : "") }))
     .concat(list.map((j) => ({ at: j.due + "00", t: "تسليم «" + j.title + "»" + (j.client ? " — " + j.client : "") + " · " + (j.k < 0 ? "متأخر " + word(-j.k) + "! خلصته؟" : j.k === 0 ? "النهارده! جاهز؟" : j.k === 1 ? "بكرة. خلصت الشغل؟" : left(j.k) + ". ماشي فيه؟") })))

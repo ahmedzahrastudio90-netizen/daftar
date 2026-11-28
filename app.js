@@ -496,17 +496,30 @@
   }
   setInterval(() => scheduleMeetingAlerts(), 30*60e3);
   // daily nudge: every meeting and delivery coming up, with a countdown, so nothing sneaks up on you
+  // how often to nudge, from the length of the job (or the stage you're in now):
+  // short (≤ 7 days): every day · up to a month: every day in the last third + a weekly check-in · longer: last week + weekly
+  function nudgeToday(start, due){
+    const k = daysUntil(due); if (k < 0) return true;
+    const total = start ? Math.max(1, daysBetween(start, due)) : 7, since = start ? -daysUntil(start) : 0;
+    if (since < 0) return false;
+    if (total <= 7) return true;
+    if (total <= 30) return k <= Math.max(3, Math.ceil(total / 3)) || (since > 0 && since % 7 === 0);
+    return k <= 7 || (since > 0 && since % 7 === 0);
+  }
   const leftWord = (k) => k === 0 ? "النهارده" : k === 1 ? "بكرة" : k === 2 ? "بعد بكرة" : "باقي " + dayWord(k);
   function digestItems(){
-    const out = [], win = Math.max(1, n(settings.remindDays) || 7);
+    const out = [];
     for (const {j, m} of allMeets()){
-      if (m.done || !m.date) continue; const k = daysUntil(m.date); if (k < 0 || k > win) continue;
+      if (m.done || !m.date) continue; const k = daysUntil(m.date); if (k < 0 || k > 3) continue;
       const who = j ? (j.client || j.title || "") : (m.with || "");
       out.push({kind:"meet", k, at:m.date + (m.time || "99"), j, m,
         text: (k <= 1 ? leftWord(k) + (m.time ? " الساعة " + fmtTime(m.time) : "") + ": " : "") + (m.title || "ميتنج") + (who && !(m.title||"").includes(who) ? " — " + who : "") + (k > 1 ? " · " + leftWord(k) : "")});
     }
     for (const j of jobs){
-      if (!isOpen(j)) continue; const nd = nextDue(j); if (!nd.date) continue; const k = daysUntil(nd.date); if (k > win) continue;
+      if (!isOpen(j)) continue; const nd = nextDue(j); if (!nd.date) continue; const k = daysUntil(nd.date);
+      const ph = nd.label ? phasesOf(j).find(p => !p.done && p.due === nd.date) : null;
+      const st = (ph && ph.start) || j.start || (j.createdAt || "").slice(0, 10);
+      if (!nudgeToday(st, nd.date)) continue;
       const what = "تسليم «" + (nd.label || j.title || "") + "»" + (nd.label && j.title ? " (" + j.title + ")" : "") + (j.client ? " — " + j.client : "");
       out.push({kind:"due", k, at:nd.date + "00", j,
         text: k < 0 ? what + " · متأخر " + dayWord(-k) + "! خلصته؟" : k === 0 ? what + " · النهارده! جاهز؟" : k === 1 ? what + " · بكرة. خلصت الشغل؟" : what + " · " + leftWord(k) + ". ماشي فيه؟"});
@@ -532,11 +545,11 @@
           : it.j ? h("span",null, meetCheck(it.j, it.m)) : null))));
   }
   async function reminders(){
-    const list = dueSoon(), meets = todayMeetings();
-    try { if ("setAppBadge" in navigator) (list.length + meets.length) ? navigator.setAppBadge(list.length + meets.length) : navigator.clearAppBadge(); } catch(e){}
+    const badge = digestItems().length;
+    try { if ("setAppBadge" in navigator) badge ? navigator.setAppBadge(badge) : navigator.clearAppBadge(); } catch(e){}
     scheduleMeetingAlerts();
     // snapshot for the background check in sw.js
-    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>({title:j.title + (nextDue(j).label ? " (" + nextDue(j).label + ")" : ""), client:j.client, due:nextDue(j).date}))))); await c.put("meetings", new Response(JSON.stringify(allMeets().filter(({m})=>!m.done).map(({j,m})=>({title:m.title, client:j ? j.client : (m.with||""), date:m.date, time:m.time}))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
+    try { if ("caches" in window){ const c = await caches.open("reminders"); await c.put("snapshot", new Response(JSON.stringify(jobs.filter(j=>isOpen(j)&&nextDue(j).date).map(j=>{ const nd = nextDue(j), ph = nd.label ? phasesOf(j).find(p => !p.done && p.due === nd.date) : null; return {title:j.title + (nd.label ? " (" + nd.label + ")" : ""), client:j.client, due:nd.date, start:(ph && ph.start) || j.start || (j.createdAt || "").slice(0, 10)}; })))); await c.put("meetings", new Response(JSON.stringify(allMeets().filter(({m})=>!m.done).map(({j,m})=>({title:m.title, client:j ? j.client : (m.with||""), date:m.date, time:m.time}))))); await c.put("days", new Response(String(settings.remindDays))); } } catch(e){}
     // once a day, when the app opens
     const dg = digestItems();
     if (dg.length && settings.lastNotify !== todayStr() && "Notification" in window && Notification.permission === "granted"){
@@ -1236,8 +1249,12 @@
       h("section",{class:"panel"},
         h("div",{class:"panel-h"}, h("h2",null,"التنبيهات")),
         h("div",null,
-          h("p",null,"فكّرني كل يوم بالمواعيد اللي جاية خلال:"),
-          h("div",{class:"picks"}, ...[1,3,5,7].map(k => h("button",{type:"button",class:"pick","aria-pressed":String(settings.remindDays===k),onclick:()=>{ settings.remindDays=k; saveSettings(); for (const j of Object.values(all)) if (!j.deleted && j.due) j.dirty = true; persist(); render(); scheduleSync(); }}, dayWord(k)))),
+          h("p",null,"التذكير ذكي على حسب مدة كل شغلانة ومرحلة:"),
+          h("ul",{class:"note",style:"margin:0;padding-inline-start:18px;line-height:1.9"},
+            h("li",null,"شغلانة أو مرحلة أسبوع أو أقل: بفكّرك كل يوم."),
+            h("li",null,"لحد شهر: كل يوم في آخر تلتها، ومرة كل أسبوع قبلها."),
+            h("li",null,"أطول من شهر: كل يوم في آخر أسبوع، ومرة كل أسبوع قبلها."),
+            h("li",null,"الميتنج: قبله بـ 3 أيام كل يوم، وقبله بنص ساعة.")),
           h("p",{class:"note"},"التطبيق بيطلّعلك إشعار قبل الميتنج بنص ساعة، والساعة 10 الصبح يوم التسليم، وهو مفتوح أو في الخلفية. ولو عايز تتفكّر والتطبيق مقفول خالص، دوس زرار 📅 وضيف الميعاد لتقويمك."),
           h("div",{class:"row-btns"},
             "Notification" in window && Notification.permission === "granted" ? h("span",{class:"cd c-done"},"✓ إشعارات التطبيق مفعّلة")
