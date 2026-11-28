@@ -823,12 +823,18 @@
   const normAr = (t) => String(t || "").replace(/[٠-٩٫٬]/g, c => AR_DIG[c]).replace(/[إأآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[\u064B-\u0652]/g, "").toLowerCase();
   const WORD_NUM = {"واحد":1,"اتنين":2,"اثنين":2,"تلاته":3,"ثلاثه":3,"اربعه":4,"اربع":4,"خمسه":5,"خمس":5,"سته":6,"ست":6,"سبعه":7,"سبع":7,"تمانيه":8,"ثمانيه":8,"تمن":8,"تسعه":9,"تسع":9,"عشره":10,"عشر":10,"حداشر":11,"اتناشر":12,"خمستاشر":15,"عشرين":20,"تلاتين":30,"خمسين":50,"مية":100,"ميه":100,"ميتين":200,"خمسميه":500,"خمسمية":500};
   // "12 الف" → 12000, "الفين" → 2000, "2 الف ونص" → 2500, "خمسه الاف" → 5000
+  const HUND = {"ميه":100,"ميت":100,"مية":100,"ميتين":200,"تلتميه":300,"تلتمية":300,"ثلاثمائه":300,"ربعميه":400,"ربعمية":400,"اربعمائه":400,"خمسميه":500,"خمسمية":500,"خمسمائه":500,"ستميه":600,"ستمية":600,"سبعميه":700,"سبعمية":700,"تمنميه":800,"تمنمية":800,"تسعميه":900,"تسعمية":900};
+  const TLAF = {"تلات":3,"ثلاث":3,"اربع":4,"خمس":5,"ست":6,"سبع":7,"تمن":8,"تمان":8,"تسع":9,"عشر":10};
   function voiceNums(t){
-    t = t.replace(/(\d),(\d{3})/g, "$1$2").replace(/(^|\s)ب(?=\d|الف|الاف|الفين)/g, "$1ب ");
+    t = t.replace(/(\d),(\d{3})/g, "$1$2").replace(/(^|\s)ب(?=\d|الف|الاف|الفين|[a-z])/g, "$1ب ").replace(/(^|\s)ب(?=(?:تلات|ثلاث|اربع|خمس|ست|سبع|تمن|تمان|تسع|عشر)(?:ت|ة|ه)?\s*(?:الاف|تلاف))/g, "$1ب ");
+    t = t.replace(/(تلات|ثلاث|اربع|خمس|ست|سبع|تمن|تمان|تسع|عشر)(?:ت|ه|ة)?\s*(?:تلاف|الاف)/g, (_, w) => " " + TLAF[w] * 1000 + " ");
+    for (const [w, v] of Object.entries(HUND)) t = t.replace(new RegExp("(^|\\s|و)" + w + "(?=\\s|$)", "g"), "$1" + v);
     for (const [w, v] of Object.entries(WORD_NUM)) t = t.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$)", "g"), "$1" + v);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(?:الف|الاف|آلاف|k)\s*(?:و\s*نص|ونص)/g, (_, a) => String(Math.round(n(a) * 1000 + 500)));
     t = t.replace(/(\d+(?:\.\d+)?)\s*(?:الف|الاف|آلاف|k)(?![a-z\u0600-\u06FF])/g, (_, a) => String(Math.round(n(a) * 1000)));
     t = t.replace(/(^|\s)الفين\s*و\s*نص(?=\s|$)/g, "$12500").replace(/(^|\s)الف\s*و\s*نص(?=\s|$)/g, "$11500").replace(/(^|\s)الفين(?=\s|$)/g, "$12000").replace(/(^|\s)الف(?=\s|$)/g, "$11000").replace(/(\d+)\s*مليون/g, (_, a) => String(n(a) * 1e6));
+    // "2000 و500" → 2500, "12000 و 750" → 12750
+    t = t.replace(/(\d*000)\s*و\s*(\d{1,3})(?=\s|$)/g, (_, a, b) => String(n(a) + n(b)));
     return t;
   }
   const WD = {"السبت":6,"الحد":0,"الاحد":0,"الاتنين":1,"الاثنين":1,"التلات":2,"الثلاثاء":2,"التلاتاء":2,"الاربع":3,"الاربعاء":3,"الخميس":4,"الجمعه":5};
@@ -913,50 +919,85 @@
     }
     return {type:"project", p, raw};
   }
+  // what the app understood, shown live while you talk
+  function voicePreview(raw){
+    const box = $("vcSum"); if (!box) return;
+    if (!raw.trim()){ box.replaceChildren(); return; }
+    const u = understand(raw), chip = (k, v) => v ? h("span",{class:"vchip"}, h("small",null,k), v) : null;
+    const list = u.type === "meeting"
+      ? [chip("ميتنج", u.j ? (u.j.client || u.j.title) : "قول اسم العميل"), chip("النوع", kindName(u.kind)), chip("اليوم", relDay(u.date)), chip("الساعة", fmtTime(u.time))]
+      : [chip("العميل", u.p.client), chip("المشروع", u.p.title), chip("السعر", u.p.price != null ? money(u.p.price, u.p.currency) : ""), chip("عربون", u.p.deposit ? money(u.p.deposit, u.p.currency) : ""), chip("التسليم", u.p.due ? dshort(u.p.due) : ""), chip("مراحل", u.p.phases ? String(u.p.phases.length) : "")];
+    box.replaceChildren(...list.filter(Boolean));
+  }
+  let voiceUndo = null;
   function actOnVoice(raw){
     const u = understand(raw);
     if (u.type === "meeting"){
       if (!u.j){ toast("مالقيتش المشروع. قول اسم العميل أو المشروع مع الميتنج.", 5000); return; }
-      openSheet(u.j.id);
-      meetDraft = {title: (u.kind ? kindName(u.kind) + " — " : "اجتماع — ") + (u.j.client || u.j.title || ""), date: u.date, time: u.time, kind: u.kind};
-      renderSheet();
-      setTimeout(() => { const f = $("mTitle")?.closest("form"); if (f){ if (u.kind){ f.dataset.kind = u.kind; f.querySelectorAll(".kind-picks .pick").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === kindName(u.kind)))); } f.scrollIntoView({block:"center", behavior:"smooth"}); } }, 60);
-      toast("راجع الميتنج واضغط حفظ ✓", 4000);
+      const j = u.j, m = {id:newId(), kind:u.kind, title:(u.kind ? kindName(u.kind) : "اجتماع") + " — " + (j.client || j.title || ""), date:u.date, time:u.time, notes:"🎤 " + raw};
+      const nx = bodyOf(j); nx.meetings = [...meetingsOf(j), m];
+      store.save(j.id, nx); voiceUndo = {id:j.id, meet:m.id};
+      openSheet(j.id); justMeet = m.id; renderSheet();
+      toast("اتسجّل الميتنج ✓ " + relDay(m.date) + " " + fmtTime(m.time), 5000);
+      if ("Notification" in window && Notification.permission === "default") enableNotify();
       return;
     }
-    const p = u.p;
-    openForm(null, {client:p.client, title:p.title, price:p.price ?? "", currency:p.currency, deposit:p.deposit || "", due:p.due, start:todayStr(), types:p.types, phases:p.phases || [], notes:"🎤 " + raw});
-    toast("راجع البيانات واضغط حفظ ✓", 4000);
+    const p = u.p, start = todayStr();
+    if (!p.client && !p.title && p.price == null){ toast("مفهمتش. قول مثلاً: لوجو لشركة نوفا حسابها 5000", 5000); return; }
+    const types = p.types.length ? p.types : ["أخرى"];
+    const data = {payments:[], status:"work", delivered:"", createdAt:new Date().toISOString(),
+      client: p.client || "عميل جديد", phone:"", title: p.title || "مشروع جديد", types, type: types.join(" + "),
+      price: n(p.price), currency: p.currency, revisions:"", start, due: p.due || "", finish:"", notes:"🎤 " + raw, phases: p.phases || []};
+    if (data.phases.length){ data.start = data.phases.map(x=>x.start).sort()[0]; data.due = data.phases.map(x=>x.due).sort().pop(); }
+    if (p.deposit > 0) data.payments = [stampPay({amount:p.deposit, date:start, note:"عربون", received:false}, p.currency)];
+    const id = newId(); store.save(id, data); voiceUndo = {id};
+    openSheet(id);
+    toast("اتسجّل المشروع ✓" + (p.price == null ? " — السعر مش واضح، عدّله" : !p.client ? " — اسم العميل مش واضح، عدّله" : ""), 5000);
   }
-  let rec = null, vcFinal = "", vcLive = "";
+  // speech: short sessions that restart while you talk (avoids the repeated text Android gives in continuous mode)
+  let rec = null, vcParts = [], vcLive = "", vcOn = false;
+  const vcText = () => (vcParts.join(" ") + " " + vcLive).replace(/\s+/g, " ").trim();
+  function vcShow(){ $("vcText").textContent = vcText(); $("vcHint").hidden = !!vcText(); voicePreview(vcText()); }
+  function vcStart(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    try { rec = new SR(); } catch(e){ toast("مقدرتش أشغّل المايك"); $("voiceDlg").close(); return; }
+    rec.lang = "ar-EG"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const r = e.results[e.results.length - 1], txt = (r[0].transcript || "").trim();
+      if (r.isFinal){
+        const last = vcParts[vcParts.length - 1] || "";
+        if (txt && txt !== last){ if (last && txt.startsWith(last)) vcParts[vcParts.length - 1] = txt; else if (!last.endsWith(txt)) vcParts.push(txt); }
+        vcLive = "";
+      } else vcLive = txt;
+      vcShow();
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed"){ vcOn = false; toast("اسمح للتطبيق يستخدم المايك من إعدادات المتصفح", 5000); $("voiceDlg").close(); }
+      else if (e.error === "network"){ vcOn = false; toast("الكلام محتاج نت", 4000); $("voiceDlg").close(); }
+    };
+    rec.onend = () => { if (vcLive){ vcParts.push(vcLive); vcLive = ""; vcShow(); } if (vcOn && $("voiceDlg").open) setTimeout(() => { if (vcOn) vcStart(); }, 120); };
+    try { rec.start(); } catch(e){}
+  }
   function openVoice(){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR){ toast("المتصفح ده مش بيدعم الكلام. جرّب Chrome أو Edge أو Safari.", 5000); return; }
-    const d = $("voiceDlg"); vcFinal = ""; vcLive = "";
-    $("vcText").textContent = ""; $("vcState").textContent = "بسمعك…"; $("vcHint").hidden = false;
-    d.querySelector(".vc").classList.add("on");
-    openDlg(d);
-    try { rec = new SR(); } catch(e){ toast("مقدرتش أشغّل المايك"); d.close(); return; }
-    rec.lang = "ar-EG"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      let fin = "", live = "";
-      for (let i = 0; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal) fin += r[0].transcript + " "; else live += r[0].transcript; }
-      vcFinal = fin; vcLive = live; $("vcText").textContent = (fin + live).trim(); $("vcHint").hidden = true;
-    };
-    rec.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { toast("اسمح للتطبيق يستخدم المايك من إعدادات المتصفح", 5000); d.close(); } else if (e.error === "no-speech") $("vcState").textContent = "مسمعتش حاجة… اتكلم تاني"; else if (e.error === "network") { toast("الكلام محتاج نت", 4000); d.close(); } };
-    rec.onend = () => { d.querySelector(".vc").classList.remove("on"); if (d.open && d._finish) finishVoice(); else if (d.open) { $("vcState").textContent = "اضغط «خلصت» لما تخلّص"; } };
-    try { rec.start(); } catch(e){}
+    vcParts = []; vcLive = ""; vcOn = true;
+    $("vcText").textContent = ""; $("vcState").textContent = "بسمعك… اتكلم براحتك"; $("vcHint").hidden = false; $("vcSum").replaceChildren();
+    $("voiceDlg").querySelector(".vc").classList.add("on");
+    openDlg($("voiceDlg")); vcStart();
   }
   function finishVoice(){
-    const d = $("voiceDlg"), text = (vcFinal + " " + vcLive).trim();
-    d._finish = false; if (d.open) d.close();
-    if (!text){ toast("مسمعتش حاجة. جرّب تاني."); return; }
-    setTimeout(() => actOnVoice(text), 120);
+    vcOn = false; try { rec && rec.stop(); } catch(e){}
+    setTimeout(() => {
+      const text = vcText(); if ($("voiceDlg").open) $("voiceDlg").close();
+      if (!text){ toast("مسمعتش حاجة. جرّب تاني."); return; }
+      setTimeout(() => actOnVoice(text), 120);
+    }, 600);
   }
-  $("vcDone").onclick = () => { const d = $("voiceDlg"); d._finish = true; try { rec && rec.stop(); } catch(e){} setTimeout(() => { if (d._finish) finishVoice(); }, 900); };
-  $("vcMic").onclick = () => $("vcDone").onclick();
-  $("vcCancel").onclick = () => { const d = $("voiceDlg"); d._finish = false; try { rec && rec.abort(); } catch(e){} d.close(); };
-  $("voiceDlg").addEventListener("close", () => { try { rec && rec.abort(); } catch(e){} });
+  $("vcDone").onclick = finishVoice;
+  $("vcMic").onclick = finishVoice;
+  $("vcCancel").onclick = () => { vcOn = false; try { rec && rec.abort(); } catch(e){} $("voiceDlg").close(); };
+  $("voiceDlg").addEventListener("close", () => { vcOn = false; $("voiceDlg").querySelector(".vc").classList.remove("on"); try { rec && rec.abort(); } catch(e){} });
   document.querySelectorAll("[data-voice]").forEach(b => b.addEventListener("click", () => openVoice()));
 
   // ---------- jobs ----------

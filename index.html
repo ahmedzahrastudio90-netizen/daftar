@@ -620,6 +620,9 @@ dialog.wizard{max-height:94dvh}.wz{max-height:94dvh}
 .vc.on .vc-mic{animation:vpulse 1.4s ease-out infinite}
 @keyframes vpulse{0%{box-shadow:0 0 0 0 rgba(124,58,237,.45)}100%{box-shadow:0 0 0 26px rgba(124,58,237,0)}}
 .vc-text{min-height:3.2em;font-size:1.05rem;font-weight:500;margin:0;line-height:1.8}
+.vc-sum{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.vchip{display:inline-flex;align-items:baseline;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.85rem;font-weight:600}
+.vchip small{color:var(--muted);font-weight:500;font-size:.75rem}
 .vc-hint{font-size:.82rem;color:var(--muted);margin:0;line-height:1.8}
 .kind-picks{display:flex;flex-wrap:wrap;gap:6px}
 .kind-picks .pick{padding:6px 12px;font-size:.82rem;border-radius:999px}
@@ -843,15 +846,16 @@ try{Promise.all([document.fonts.load('600 1em "IBM Plex Sans Arabic"'),document.
     <button class="vc-mic" type="button" id="vcMic" aria-label="إيقاف"><svg><use href="#i-mic"/></svg></button>
     <b id="vcState">بسمعك…</b>
     <p id="vcText" class="vc-text"></p>
+    <div id="vcSum" class="vc-sum"></div>
     <p class="vc-hint" id="vcHint">قول مثلاً: «شغلانة جديدة لوجو لشركة نوفا حسابها 5000 دفعة أولى 2000 والتسليم الخميس»<br>أو: «ميتنج بكرة الساعة 5 بخصوص نوفا عرض اسكتشات»</p>
-    <div class="row-btns" style="justify-content:center"><button class="btn primary" type="button" id="vcDone">خلصت</button><button class="btn" type="button" id="vcCancel">إلغاء</button></div>
+    <div class="row-btns" style="justify-content:center"><button class="btn primary" type="button" id="vcDone">خلصت — سجّل</button><button class="btn" type="button" id="vcCancel">إلغاء</button></div>
   </div>
 </dialog>
 <dialog class="wadlg" id="waDlg" aria-labelledby="waTitle"><div class="wz" id="wa"></div></dialog>
 <dialog class="sheet" id="sheetDlg"><div class="sh" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="parser.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="parser.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>
